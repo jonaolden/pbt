@@ -14,11 +14,6 @@ public class ResolvedAssetPaths
     public List<string> TablePaths { get; set; } = new();
 
     /// <summary>
-    /// Macro paths ordered by priority (first = highest)
-    /// </summary>
-    public List<string> MacroPaths { get; set; } = new();
-
-    /// <summary>
     /// Model paths ordered by priority (first = highest)
     /// </summary>
     public List<string> ModelPaths { get; set; } = new();
@@ -80,7 +75,7 @@ public class AssetLoader
         {
             throw new InvalidOperationException(
                 "Project 'assets' configuration is required. " +
-                "Define at least one asset group with table, macro, or model paths.");
+                "Define at least one asset group with table or model paths.");
         }
 
         // Process asset groups in order (first = highest priority)
@@ -107,12 +102,6 @@ public class AssetLoader
                             resolved.TablePaths.Add(tablesPath);
                         }
 
-                        var macrosPath = Path.Combine(basePath, "macros");
-                        if (Directory.Exists(macrosPath))
-                        {
-                            resolved.MacroPaths.Add(macrosPath);
-                        }
-
                         var modelsPath = Path.Combine(basePath, "models");
                         if (Directory.Exists(modelsPath))
                         {
@@ -133,20 +122,6 @@ public class AssetLoader
                     {
                         throw new DirectoryNotFoundException(
                             $"Tables path not found for group '{groupName}': {tablesPath}");
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(config.Macros))
-                {
-                    var macrosPath = ResolvePath(config.Macros, projectPath);
-                    if (Directory.Exists(macrosPath))
-                    {
-                        resolved.MacroPaths.Add(macrosPath);
-                    }
-                    else
-                    {
-                        throw new DirectoryNotFoundException(
-                            $"Macros path not found for group '{groupName}': {macrosPath}");
                     }
                 }
 
@@ -236,15 +211,4 @@ public class AssetLoader
         return modelFiles;
     }
 
-    /// <summary>
-    /// Get all macro paths that can be searched for macros
-    /// </summary>
-    /// <param name="assetPaths">Resolved asset paths</param>
-    /// <returns>List of macro directory paths ordered by priority</returns>
-    public List<string> GetMacroPaths(ResolvedAssetPaths assetPaths)
-    {
-        return assetPaths.MacroPaths
-            .Where(Directory.Exists)
-            .ToList();
-    }
 }

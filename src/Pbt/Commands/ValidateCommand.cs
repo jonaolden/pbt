@@ -90,11 +90,6 @@ public static class ValidateCommand
             {
                 Console.WriteLine($"    - {path}");
             }
-            Console.WriteLine($"  Macros ({assetPaths.MacroPaths.Count} paths):");
-            foreach (var path in assetPaths.MacroPaths)
-            {
-                Console.WriteLine($"    - {path}");
-            }
             Console.WriteLine();
         }
 
