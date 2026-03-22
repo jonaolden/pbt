@@ -1,0 +1,37 @@
+name: SalesAnalytics
+description: Sales analytics model
+
+tables:
+  - ref: Sales
+  - ref: Customers
+
+relationships:
+  - from_table: Sales
+    from_column: CustomerID
+    to_table: Customers
+    to_column: CustomerID
+    cardinality: ManyToOne
+    cross_filter_direction: Both
+    active: true
+
+measures:
+  - name: Total Sales
+    table: Sales
+    expression: SUM(Sales[Amount])
+    format_string: "$#,##0.00"
+    description: Total sales amount
+    display_folder: Sales Metrics
+
+  - name: Number of Orders
+    table: Sales
+    expression: COUNTROWS(Sales)
+    format_string: "#,##0"
+    description: Count of orders
+    display_folder: Sales Metrics
+
+  - name: Average Order Value
+    table: Sales
+    expression: DIVIDE([Total Sales], [Number of Orders])
+    format_string: "$#,##0.00"
+    description: Average value per order
+    display_folder: Sales Metrics
