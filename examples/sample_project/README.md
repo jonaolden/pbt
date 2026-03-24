@@ -6,22 +6,25 @@ This is an example project demonstrating the structure and usage of PBI Composer
 
 ```
 sample_project/
-├── project.yml          # Project configuration
 ├── tables/              # Table definitions (reusable)
 │   ├── sales.yaml
 │   └── customers.yaml
 ├── models/              # Model compositions
 │   └── sales_model.yaml
 ├── target/              # Generated TMDL output (created by build)
-└── .pbicomposer/        # Lineage tag manifest (auto-generated)
+└── .pbt/                # Lineage tag manifest (auto-generated)
 ```
 
 ## Files
 
-### project.yml
-Defines project-level configuration:
-- Project name
-- Compatibility level (Power BI dataset compatibility)
+### models/sales_model.yaml
+Each model file is self-contained and carries all project-level configuration:
+- `name` / `description` — semantic model name and description
+- `compatibility_level` — Power BI dataset compatibility level
+- `format_strings` — optional type-level default format strings
+- `assets` — optional override for table/macro lookup paths (defaults to `tables/` and `macros/` next to the project root)
+- `builds` — optional build output path override
+- Tables, relationships, measures, calculation groups, etc.
 
 ### tables/
 Contains reusable table definitions:
@@ -33,42 +36,35 @@ Each table file includes:
 - Column definitions with types and metadata
 - Optional hierarchies
 
-### models/
-Contains model compositions:
-- `sales_model.yaml` - Combines Sales and Customers tables
-
-Model files define:
-- Which tables to include (by reference)
-- Relationships between tables
-- Measures (DAX expressions)
-
 ## Usage
 
 ```bash
 # Validate the project
-pbicomposer validate ./sample_project
+pbt validate ./sample_project
 
-# Build TMDL from YAML
-pbicomposer build ./sample_project
+# Build Power BI project (.pbip) from YAML
+pbt build ./sample_project
 
 # List tables and models
-pbicomposer list ./sample_project
+pbt list ./sample_project
 
 # View lineage tags
-pbicomposer lineage show ./sample_project
+pbt lineage show ./sample_project
 ```
 
 ## Generated Output
 
-After running `pbicomposer build`, the `target/` directory will contain:
+After running `pbt build`, the `target/` directory will contain:
 ```
 target/
-└── SalesAnalytics/
-    ├── database.tmdl
-    ├── model.tmdl
-    └── tables/
-        ├── Sales.tmdl
-        └── Customers.tmdl
+└── SalesAnalytics.pbip
+└── SalesAnalytics.SemanticModel/
+    └── definition/
+        ├── database.tmdl
+        ├── model.tmdl
+        └── tables/
+            ├── Sales.tmdl
+            └── Customers.tmdl
 ```
 
-This TMDL can be opened in Power BI Desktop or deployed to Power BI Service.
+This PBIP can be opened in Power BI Desktop or deployed to Power BI Service.

@@ -36,7 +36,7 @@ public class ModelComposerTests
 
         // Act
         var composer = new ModelComposer(registry);
-        var database = composer.ComposeModel(modelDef, 1600);
+        var database = composer.ComposeModel(modelDef);
 
         // Assert - Database
         Assert.NotNull(database);

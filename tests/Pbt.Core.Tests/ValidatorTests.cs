@@ -28,13 +28,13 @@ public class ValidatorTests
     }
 
     [Fact]
-    public void ValidateProject_MissingProjectYaml_ShouldFail()
+    public void ValidateProject_MissingModelsDirectory_ShouldFail()
     {
         // Arrange
         var tempPath = Path.Combine(Path.GetTempPath(), $"validator_test_{Guid.NewGuid()}");
         Directory.CreateDirectory(tempPath);
         Directory.CreateDirectory(Path.Combine(tempPath, "tables"));
-        Directory.CreateDirectory(Path.Combine(tempPath, "models"));
+        // Intentionally no models/ directory
 
         try
         {
@@ -45,7 +45,7 @@ public class ValidatorTests
 
             // Assert
             Assert.False(result.IsValid);
-            Assert.Contains(result.Errors, e => e.Message.Contains("project.yml"));
+            Assert.Contains(result.Errors, e => e.Message.Contains("models/"));
         }
         finally
         {
@@ -783,15 +783,6 @@ public class ValidatorTests
         Directory.CreateDirectory(tempPath);
         Directory.CreateDirectory(Path.Combine(tempPath, "tables"));
         Directory.CreateDirectory(Path.Combine(tempPath, "models"));
-
-        var project = new ProjectDefinition
-        {
-            Name = "TestProject",
-            CompatibilityLevel = 1600
-        };
-
-        _serializer.SaveToFile(project, Path.Combine(tempPath, "project.yml"));
-
         return tempPath;
     }
 

@@ -1,6 +1,0 @@
-name: SampleProject
-description: Example Power BI Composer project
-compatibility_level: 1600
-assets:
-  project:
-    - path: "."

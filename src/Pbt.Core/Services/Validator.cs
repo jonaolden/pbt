@@ -43,50 +43,25 @@ public class Validator
     }
 
     /// <summary>
-    /// Validate project using resolved asset paths
+    /// Validate project using a model definition and its resolved asset paths.
     /// </summary>
-    public ValidationResult ValidateProjectWithAssets(string projectPath, ResolvedAssetPaths assetPaths)
+    public ValidationResult ValidateProjectWithAssets(ModelDefinition model, string modelFilePath, ResolvedAssetPaths assetPaths)
     {
         var result = new ValidationResult();
 
-        // 1. Validate project.yml exists
-        var projectYamlPath = Path.Combine(projectPath, "project.yml");
-        if (!File.Exists(projectYamlPath))
-        {
-            result.AddError("project.yml not found", projectPath,
-                suggestion: "Run 'pbt init' to create a new project");
-            return result;
-        }
+        // 1. Validate model-level configuration
+        ValidateModelLevelConfig(model, modelFilePath, result);
 
-        // 2. Load and validate project definition
-        ProjectDefinition? project = null;
-        try
-        {
-            project = _serializer.LoadFromFile<ProjectDefinition>(projectYamlPath);
-            ValidateProjectDefinition(project, projectYamlPath, result);
-        }
-        catch (Exception ex)
-        {
-            result.AddError($"Failed to load project.yml: {ex.Message}", projectYamlPath);
-            return result;
-        }
-
-        // 3. Validate asset paths exist
+        // 2. Validate asset paths exist
         if (assetPaths.TablePaths.Count == 0)
         {
-            result.AddError("No table paths configured", projectYamlPath,
-                suggestion: "Add at least one tables path to the assets configuration");
-        }
-
-        if (assetPaths.ModelPaths.Count == 0)
-        {
-            result.AddError("No model paths configured", projectYamlPath,
-                suggestion: "Add at least one models path to the assets configuration");
+            result.AddError("No table paths found", modelFilePath,
+                suggestion: "Ensure the tables/ directory exists relative to the project root or configure 'assets' in the model file");
         }
 
         if (!result.IsValid) return result;
 
-        // 4. Load tables from all configured paths
+        // 3. Load tables from all configured paths
         TableRegistry? registry = null;
         try
         {
@@ -105,35 +80,22 @@ public class Validator
             return result;
         }
 
-        // 5. Load and validate models from all configured paths
-        foreach (var modelsPath in assetPaths.ModelPaths)
+        // 4. Validate model references
+        try
         {
-            if (!Directory.Exists(modelsPath)) continue;
-
-            var modelFiles = Directory.GetFiles(modelsPath, "*.yaml")
-                .Concat(Directory.GetFiles(modelsPath, "*.yml"))
-                .ToList();
-
-            foreach (var modelFile in modelFiles)
-            {
-                try
-                {
-                    var model = _serializer.LoadFromFile<ModelDefinition>(modelFile);
-                    ValidateModelReferences(model, registry, modelFile, result);
-                }
-                catch (Exception ex)
-                {
-                    result.AddError($"Failed to load model: {ex.Message}", modelFile);
-                }
-            }
+            ValidateModelReferences(model, registry, modelFilePath, result);
+        }
+        catch (Exception ex)
+        {
+            result.AddError($"Failed to validate model: {ex.Message}", modelFilePath);
         }
 
         return result;
     }
 
     /// <summary>
-    /// Validate entire project structure using the legacy flat layout (tables/ and models/ directories).
-    /// Delegates to ValidateProjectWithAssets with synthetic asset paths.
+    /// Validate all models found in the project's models/ directory.
+    /// Uses convention-based layout (tables/ and models/ directories relative to projectPath).
     /// </summary>
     public ValidationResult ValidateProject(string projectPath)
     {
@@ -145,55 +107,63 @@ public class Validator
             return result;
         }
 
-        var projectYaml = Path.Combine(projectPath, "project.yml");
-        if (!File.Exists(projectYaml))
+        var modelsDir = Path.Combine(projectPath, "models");
+        if (!Directory.Exists(modelsDir))
         {
-            result.AddError("project.yml not found", projectPath,
+            result.AddError("models/ directory not found", projectPath,
                 suggestion: "Run 'pbt init' to create a new project");
             return result;
         }
 
-        var tablesDir = Path.Combine(projectPath, "tables");
-        if (!Directory.Exists(tablesDir))
-        {
-            result.AddError("tables/ directory not found", projectPath);
-        }
+        var modelFiles = Directory.GetFiles(modelsDir, "*.yaml")
+            .Concat(Directory.GetFiles(modelsDir, "*.yml"))
+            .ToList();
 
-        var modelsDir = Path.Combine(projectPath, "models");
-        if (!Directory.Exists(modelsDir))
+        if (modelFiles.Count == 0)
         {
-            result.AddError("models/ directory not found", projectPath);
-        }
-
-        if (!result.IsValid)
-        {
+            result.AddError("No model files found in models/ directory", modelsDir,
+                suggestion: "Create at least one model YAML file in the models/ directory");
             return result;
         }
 
-        // Delegate to the canonical validation path with synthetic asset paths
-        var assetPaths = new ResolvedAssetPaths
-        {
-            TablePaths = { tablesDir },
-            ModelPaths = { modelsDir }
-        };
+        var assetLoader = new AssetLoader(_serializer);
 
-        return ValidateProjectWithAssets(projectPath, assetPaths);
+        foreach (var modelFile in modelFiles)
+        {
+            ModelDefinition model;
+            try
+            {
+                model = _serializer.LoadFromFile<ModelDefinition>(modelFile);
+            }
+            catch (Exception ex)
+            {
+                result.AddError($"Failed to load model file: {ex.Message}", modelFile);
+                continue;
+            }
+
+            var assetPaths = assetLoader.ResolveAssetPaths(model, projectPath);
+            var modelResult = ValidateProjectWithAssets(model, modelFile, assetPaths);
+            foreach (var error in modelResult.Errors) result.Errors.Add(error);
+            foreach (var warning in modelResult.Warnings) result.Warnings.Add(warning);
+        }
+
+        return result;
     }
 
     /// <summary>
-    /// Validate project definition
+    /// Validate model-level configuration fields (name, compatibility level, etc.)
     /// </summary>
-    private void ValidateProjectDefinition(ProjectDefinition project, string filePath, ValidationResult result)
+    private void ValidateModelLevelConfig(ModelDefinition model, string filePath, ValidationResult result)
     {
-        if (string.IsNullOrWhiteSpace(project.Name))
+        if (string.IsNullOrWhiteSpace(model.Name))
         {
-            result.AddError("Project name is required", filePath);
+            result.AddError("Model name is required", filePath);
         }
 
-        if (project.CompatibilityLevel < 1200 || project.CompatibilityLevel > 1700)
+        if (model.CompatibilityLevel < 1200 || model.CompatibilityLevel > 1700)
         {
             result.AddWarning(
-                $"Unusual compatibility level: {project.CompatibilityLevel}",
+                $"Unusual compatibility level: {model.CompatibilityLevel}",
                 filePath,
                 context: "Common values are 1200, 1400, 1500, 1600");
         }

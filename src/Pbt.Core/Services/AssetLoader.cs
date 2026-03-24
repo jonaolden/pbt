@@ -35,8 +35,9 @@ public class ResolvedAssetPaths
 }
 
 /// <summary>
-/// Service to resolve and load assets from project configuration
-/// Handles priority-based asset loading from multiple configured paths
+/// Service to resolve and load assets from model configuration.
+/// Model files are discovered by convention (models/ subdirectory of the project root).
+/// Each model carries its own asset configuration.
 /// </summary>
 public class AssetLoader
 {
@@ -48,129 +49,122 @@ public class AssetLoader
     }
 
     /// <summary>
-    /// Load project definition and resolve all asset paths
+    /// Find all model files in the project by convention.
+    /// Scans the models/ subdirectory of the given project path.
     /// </summary>
-    /// <param name="projectPath">Path to project directory containing project.yml</param>
-    /// <returns>Project definition and resolved asset paths</returns>
-    public (ProjectDefinition Project, ResolvedAssetPaths AssetPaths) LoadProject(string projectPath)
+    /// <param name="projectPath">Path to the project root directory</param>
+    /// <returns>List of model file paths</returns>
+    public List<string> FindModelFiles(string projectPath)
     {
-        var projectYamlPath = Path.Combine(projectPath, "project.yml");
-        if (!File.Exists(projectYamlPath))
+        var modelsPath = Path.Combine(projectPath, "models");
+        if (!Directory.Exists(modelsPath))
         {
-            throw new FileNotFoundException("project.yml not found in project directory", projectYamlPath);
+            return new List<string>();
         }
 
-        var project = _serializer.LoadFromFile<ProjectDefinition>(projectYamlPath);
-        var assetPaths = ResolveAssetPaths(project, projectPath);
-
-        return (project, assetPaths);
+        return Directory.GetFiles(modelsPath, "*.yaml")
+            .Concat(Directory.GetFiles(modelsPath, "*.yml"))
+            .ToList();
     }
 
     /// <summary>
-    /// Resolve asset paths from project configuration
+    /// Resolve asset paths from a model definition.
+    /// If the model has an explicit assets configuration it is used; otherwise the
+    /// convention-based layout (tables/ and macros/ relative to projectPath) is used.
     /// </summary>
-    /// <param name="project">Project definition</param>
-    /// <param name="projectPath">Path to the project directory, used to resolve relative paths</param>
-    /// <returns>Resolved asset paths ordered by priority</returns>
-    public ResolvedAssetPaths ResolveAssetPaths(ProjectDefinition project, string projectPath)
+    /// <param name="model">Model definition (may contain an assets section)</param>
+    /// <param name="projectPath">Project root — used as the base for relative paths</param>
+    /// <returns>Resolved asset paths</returns>
+    public ResolvedAssetPaths ResolveAssetPaths(ModelDefinition model, string projectPath)
     {
         var resolved = new ResolvedAssetPaths();
 
-        if (project.Assets == null || project.Assets.Count == 0)
+        if (model.Assets != null && model.Assets.Count > 0)
         {
-            throw new InvalidOperationException(
-                "Project 'assets' configuration is required. " +
-                "Define at least one asset group with table, macro, or model paths.");
-        }
-
-        // Process asset groups in order (first = highest priority)
-        foreach (var (groupName, pathConfigs) in project.Assets)
-        {
-            if (pathConfigs == null) continue;
-
-            foreach (var config in pathConfigs)
+            // Process asset groups in order (first = highest priority)
+            foreach (var (groupName, pathConfigs) in model.Assets)
             {
-                // Handle 'path' - includes all asset types from subdirectories
-                if (!string.IsNullOrWhiteSpace(config.Path))
-                {
-                    var basePath = ResolvePath(config.Path, projectPath);
+                if (pathConfigs == null) continue;
 
-                    if (!Directory.Exists(basePath))
+                foreach (var config in pathConfigs)
+                {
+                    // Handle 'path' - includes all asset types from subdirectories
+                    if (!string.IsNullOrWhiteSpace(config.Path))
                     {
-                        Console.WriteLine($"Warning: Asset path '{config.Path}' (group '{groupName}') does not exist, skipping");
+                        var basePath = ResolvePath(config.Path, projectPath);
+
+                        if (!Directory.Exists(basePath))
+                        {
+                            Console.WriteLine($"Warning: Asset path '{config.Path}' (group '{groupName}') does not exist, skipping");
+                        }
+                        else
+                        {
+                            var tablesPath = Path.Combine(basePath, "tables");
+                            if (Directory.Exists(tablesPath))
+                            {
+                                resolved.TablePaths.Add(tablesPath);
+                            }
+
+                            var macrosPath = Path.Combine(basePath, "macros");
+                            if (Directory.Exists(macrosPath))
+                            {
+                                resolved.MacroPaths.Add(macrosPath);
+                            }
+                        }
                     }
-                    else
+
+                    // Handle specific asset type paths
+                    if (!string.IsNullOrWhiteSpace(config.Tables))
                     {
-                        var tablesPath = Path.Combine(basePath, "tables");
+                        var tablesPath = ResolvePath(config.Tables, projectPath);
                         if (Directory.Exists(tablesPath))
                         {
                             resolved.TablePaths.Add(tablesPath);
                         }
+                        else
+                        {
+                            throw new DirectoryNotFoundException(
+                                $"Tables path not found for group '{groupName}': {tablesPath}");
+                        }
+                    }
 
-                        var macrosPath = Path.Combine(basePath, "macros");
+                    if (!string.IsNullOrWhiteSpace(config.Macros))
+                    {
+                        var macrosPath = ResolvePath(config.Macros, projectPath);
                         if (Directory.Exists(macrosPath))
                         {
                             resolved.MacroPaths.Add(macrosPath);
                         }
-
-                        var modelsPath = Path.Combine(basePath, "models");
-                        if (Directory.Exists(modelsPath))
+                        else
                         {
-                            resolved.ModelPaths.Add(modelsPath);
+                            throw new DirectoryNotFoundException(
+                                $"Macros path not found for group '{groupName}': {macrosPath}");
                         }
-                    }
-                }
-
-                // Handle specific asset type paths
-                if (!string.IsNullOrWhiteSpace(config.Tables))
-                {
-                    var tablesPath = ResolvePath(config.Tables, projectPath);
-                    if (Directory.Exists(tablesPath))
-                    {
-                        resolved.TablePaths.Add(tablesPath);
-                    }
-                    else
-                    {
-                        throw new DirectoryNotFoundException(
-                            $"Tables path not found for group '{groupName}': {tablesPath}");
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(config.Macros))
-                {
-                    var macrosPath = ResolvePath(config.Macros, projectPath);
-                    if (Directory.Exists(macrosPath))
-                    {
-                        resolved.MacroPaths.Add(macrosPath);
-                    }
-                    else
-                    {
-                        throw new DirectoryNotFoundException(
-                            $"Macros path not found for group '{groupName}': {macrosPath}");
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(config.Models))
-                {
-                    var modelsPath = ResolvePath(config.Models, projectPath);
-                    if (Directory.Exists(modelsPath))
-                    {
-                        resolved.ModelPaths.Add(modelsPath);
-                    }
-                    else
-                    {
-                        throw new DirectoryNotFoundException(
-                            $"Models path not found for group '{groupName}': {modelsPath}");
                     }
                 }
             }
         }
-
-        // Resolve build configuration
-        if (project.Builds != null)
+        else
         {
-            resolved.BuildPath = ResolvePath(project.Builds.Path, projectPath);
-            resolved.BuildIncludeSubdirectories = project.Builds.IncludeSubdirectories;
+            // Convention-based defaults: look for tables/ and macros/ next to the project root
+            var tablesPath = Path.Combine(projectPath, "tables");
+            if (Directory.Exists(tablesPath))
+            {
+                resolved.TablePaths.Add(tablesPath);
+            }
+
+            var macrosPath = Path.Combine(projectPath, "macros");
+            if (Directory.Exists(macrosPath))
+            {
+                resolved.MacroPaths.Add(macrosPath);
+            }
+        }
+
+        // Resolve build configuration from model
+        if (model.Builds != null)
+        {
+            resolved.BuildPath = ResolvePath(model.Builds.Path, projectPath);
+            resolved.BuildIncludeSubdirectories = model.Builds.IncludeSubdirectories;
         }
 
         return resolved;
@@ -190,11 +184,9 @@ public class AssetLoader
     }
 
     /// <summary>
-    /// Create a TableRegistry loaded with tables from all configured paths
-    /// Tables are loaded in priority order - higher priority tables override lower priority
+    /// Create a TableRegistry loaded with tables from all configured paths.
+    /// Tables are loaded in priority order — higher priority tables override lower priority ones.
     /// </summary>
-    /// <param name="assetPaths">Resolved asset paths</param>
-    /// <returns>TableRegistry with all tables loaded</returns>
     public TableRegistry CreateTableRegistry(ResolvedAssetPaths assetPaths)
     {
         var registry = new TableRegistry(_serializer);
@@ -203,44 +195,8 @@ public class AssetLoader
     }
 
     /// <summary>
-    /// Get all model files from configured paths
-    /// Models are returned in priority order - higher priority first
-    /// </summary>
-    /// <param name="assetPaths">Resolved asset paths</param>
-    /// <returns>List of model file paths ordered by priority</returns>
-    public List<string> GetModelFiles(ResolvedAssetPaths assetPaths)
-    {
-        var modelFiles = new List<string>();
-        var seenModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var modelsPath in assetPaths.ModelPaths)
-        {
-            if (!Directory.Exists(modelsPath)) continue;
-
-            var files = Directory.GetFiles(modelsPath, "*.yaml")
-                .Concat(Directory.GetFiles(modelsPath, "*.yml"))
-                .ToList();
-
-            foreach (var file in files)
-            {
-                var modelName = Path.GetFileNameWithoutExtension(file);
-                
-                // Higher priority paths are processed first, skip duplicates
-                if (seenModels.Add(modelName))
-                {
-                    modelFiles.Add(file);
-                }
-            }
-        }
-
-        return modelFiles;
-    }
-
-    /// <summary>
     /// Get all macro paths that can be searched for macros
     /// </summary>
-    /// <param name="assetPaths">Resolved asset paths</param>
-    /// <returns>List of macro directory paths ordered by priority</returns>
     public List<string> GetMacroPaths(ResolvedAssetPaths assetPaths)
     {
         return assetPaths.MacroPaths

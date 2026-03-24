@@ -41,11 +41,11 @@ public class EndToEndBuildTests
             // ── 1. Create project structure on disk ──
             CreateComprehensiveProject(tempPath);
 
-            // ── 2. Load project ──
-            var projectYaml = Path.Combine(tempPath, "project.yml");
-            var project = _serializer.LoadFromFile<ProjectDefinition>(projectYaml);
-            Assert.Equal("E2ETestProject", project.Name);
-            Assert.Equal(1600, project.CompatibilityLevel);
+            // ── 2. Load model definition ──
+            var modelPath = Path.Combine(tempPath, "models", "full_model.yaml");
+            var modelDef = _serializer.LoadFromFile<ModelDefinition>(modelPath);
+            Assert.Equal("FullTestModel", modelDef.Name);
+            Assert.Equal(1600, modelDef.CompatibilityLevel);
 
             // ── 3. Load table registry ──
             var tablesPath = Path.Combine(tempPath, "tables");
@@ -53,22 +53,17 @@ public class EndToEndBuildTests
             registry.LoadTables(tablesPath);
             Assert.Equal(3, registry.Count); // Sales, Customers, DateDim
 
-            // ── 4. Load model definition ──
-            var modelPath = Path.Combine(tempPath, "models", "full_model.yaml");
-            var modelDef = _serializer.LoadFromFile<ModelDefinition>(modelPath);
-            Assert.Equal("FullTestModel", modelDef.Name);
-
-            // ── 5. Validate project ──
+            // ── 4. Validate project ──
             var validator = new Validator(_serializer);
             var validationResult = validator.ValidateProject(tempPath);
             Assert.True(validationResult.IsValid, $"Validation failed: {validationResult.FormatMessages()}");
 
-            // ── 6. Compose TOM Database with lineage ──
+            // ── 5. Compose TOM Database with lineage ──
             var lineageService = new LineageManifestService(_serializer);
             lineageService.LoadManifest(tempPath);
 
             var composer = new ModelComposer(registry);
-            var database = composer.ComposeModel(modelDef, project.CompatibilityLevel, lineageService, project, tempPath);
+            var database = composer.ComposeModel(modelDef, lineageService, tempPath);
 
             Assert.NotNull(database);
             Assert.NotNull(database.Model);
@@ -116,7 +111,7 @@ public class EndToEndBuildTests
             lineageService2.LoadManifest(tempPath);
 
             // Rebuild with existing manifest ─ all tags should be reused
-            var database2 = composer.ComposeModel(modelDef, project.CompatibilityLevel, lineageService2, project, tempPath);
+            var database2 = composer.ComposeModel(modelDef, lineageService2, tempPath);
             Assert.Equal(0, lineageService2.NewTagCount);
             Assert.True(lineageService2.ExistingTagCount > 0);
 
@@ -160,17 +155,15 @@ public class EndToEndBuildTests
         {
             CreateComprehensiveProject(tempPath);
 
-            var project = _serializer.LoadFromFile<ProjectDefinition>(Path.Combine(tempPath, "project.yml"));
+            var modelDef = _serializer.LoadFromFile<ModelDefinition>(Path.Combine(tempPath, "models", "full_model.yaml"));
             var registry = new TableRegistry(_serializer);
             registry.LoadTables(Path.Combine(tempPath, "tables"));
-
-            var modelDef = _serializer.LoadFromFile<ModelDefinition>(Path.Combine(tempPath, "models", "full_model.yaml"));
 
             var lineageService = new LineageManifestService(_serializer);
             var composer = new ModelComposer(registry);
 
             // Act - compose without writing
-            var database = composer.ComposeModel(modelDef, project.CompatibilityLevel, lineageService, project, tempPath);
+            var database = composer.ComposeModel(modelDef, lineageService, tempPath);
 
             // Assert - model is valid
             Assert.NotNull(database);
@@ -203,22 +196,20 @@ public class EndToEndBuildTests
         {
             CreateComprehensiveProject(tempPath);
 
-            var project = _serializer.LoadFromFile<ProjectDefinition>(Path.Combine(tempPath, "project.yml"));
+            var modelDef = _serializer.LoadFromFile<ModelDefinition>(Path.Combine(tempPath, "models", "full_model.yaml"));
             var registry = new TableRegistry(_serializer);
             registry.LoadTables(Path.Combine(tempPath, "tables"));
 
-            var modelDef = _serializer.LoadFromFile<ModelDefinition>(Path.Combine(tempPath, "models", "full_model.yaml"));
-
             var lineageService = new LineageManifestService(_serializer);
             var composer = new ModelComposer(registry);
-            var database = composer.ComposeModel(modelDef, project.CompatibilityLevel, lineageService, project, tempPath);
+            var database = composer.ComposeModel(modelDef, lineageService, tempPath);
 
             // Act - generate PBIP
             var targetPath = Path.Combine(tempPath, "target");
-            PbipGenerator.GeneratePbipStructure(database, project.Name, targetPath);
+            PbipGenerator.GeneratePbipStructure(database, modelDef.Name, targetPath);
 
             // Assert - PBIP structure
-            var sanitizedName = FileNameSanitizer.Sanitize(project.Name);
+            var sanitizedName = FileNameSanitizer.Sanitize(modelDef.Name);
             Assert.True(File.Exists(Path.Combine(targetPath, $"{sanitizedName}.pbip")), ".pbip file missing");
             Assert.True(Directory.Exists(Path.Combine(targetPath, $"{sanitizedName}.SemanticModel")), "SemanticModel dir missing");
             Assert.True(Directory.Exists(Path.Combine(targetPath, $"{sanitizedName}.Report")), "Report dir missing");
@@ -251,24 +242,7 @@ public class EndToEndBuildTests
         Directory.CreateDirectory(tablesPath);
         Directory.CreateDirectory(modelsPath);
 
-        // ── project.yml ──
-        var project = new ProjectDefinition
-        {
-            Name = "E2ETestProject",
-            Description = "End-to-end test project exercising all features",
-            CompatibilityLevel = 1600,
-            Expressions = new List<ExpressionDefinition>
-            {
-                new()
-                {
-                    Name = "ServerName",
-                    Kind = "M",
-                    Expression = "\"localhost\" meta [IsParameterQuery=true, Type=\"Text\", IsParameterQueryRequired=true]",
-                    Description = "Database server name"
-                }
-            }
-        };
-        _serializer.SaveToFile(project, Path.Combine(basePath, "project.yml"));
+        // Tables and models are created below; no separate project.yml needed.
 
         // ── Sales table (partitions, column properties, measures) ──
         CreateSalesTable(tablesPath);
@@ -469,6 +443,7 @@ columns:
         var modelYaml = @"
 name: FullTestModel
 description: Comprehensive model testing all features
+compatibility_level: 1600
 
 tables:
   - ref: Sales
@@ -501,6 +476,10 @@ measures:
     description: Average value per order
 
 expressions:
+  - name: ServerName
+    kind: M
+    expression: '""localhost"" meta [IsParameterQuery=true, Type=""Text"", IsParameterQueryRequired=true]'
+    description: Database server name
   - name: DatabaseName
     kind: M
     expression: '""TestDB"" meta [IsParameterQuery=true, Type=""Text"", IsParameterQueryRequired=true]'

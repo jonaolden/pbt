@@ -52,7 +52,7 @@ public class LineageManifestIntegrationTests
             var lineageService1 = new LineageManifestService(_serializer);
             lineageService1.LoadManifest(tempPath);
 
-            var database1 = composer.ComposeModel(modelDef, 1600, lineageService1);
+            var database1 = composer.ComposeModel(modelDef, lineageService1);
 
             var salesTable1 = database1.Model.Tables.Find("Sales");
             var tableTag1 = salesTable1!.LineageTag;
@@ -68,7 +68,7 @@ public class LineageManifestIntegrationTests
             var lineageService2 = new LineageManifestService(_serializer);
             lineageService2.LoadManifest(tempPath);
 
-            var database2 = composer.ComposeModel(modelDef, 1600, lineageService2);
+            var database2 = composer.ComposeModel(modelDef, lineageService2);
 
             var salesTable2 = database2.Model.Tables.Find("Sales");
             var tableTag2 = salesTable2!.LineageTag;
@@ -130,7 +130,7 @@ public class LineageManifestIntegrationTests
             var lineageService1 = new LineageManifestService(_serializer);
             lineageService1.LoadManifest(tempPath);
 
-            composer.ComposeModel(modelDef, 1600, lineageService1);
+            composer.ComposeModel(modelDef, lineageService1);
             lineageService1.SaveManifest(tempPath);
 
             var initialNewCount = lineageService1.NewTagCount;
@@ -155,7 +155,7 @@ public class LineageManifestIntegrationTests
             var lineageService2 = new LineageManifestService(_serializer);
             lineageService2.LoadManifest(tempPath);
 
-            composer.ComposeModel(modelDef, 1600, lineageService2);
+            composer.ComposeModel(modelDef, lineageService2);
 
             // Assert
             Assert.Equal(1, lineageService2.NewTagCount); // Only Quantity column is new
@@ -210,7 +210,7 @@ public class LineageManifestIntegrationTests
             lineageService.LoadManifest(tempPath);
 
             // Act
-            var database = composer.ComposeModel(modelDef, 1600, lineageService);
+            var database = composer.ComposeModel(modelDef, lineageService);
 
             // Assert
             var salesTable = database.Model.Tables.Find("Sales");

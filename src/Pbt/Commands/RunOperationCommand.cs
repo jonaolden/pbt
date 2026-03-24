@@ -94,12 +94,24 @@ public static class RunOperationCommand
         var fileResolver = new MacroFileResolver();
         var executor = new PipelineExecutor();
 
-        // Try to load project and resolve macro paths, fall back to legacy method
+        // Try to load macro paths from the first model's asset config, fall back to convention
         List<string> macroPaths;
         try
         {
-            var (project, assetPaths) = assetLoader.LoadProject(projectRoot);
-            macroPaths = assetLoader.GetMacroPaths(assetPaths);
+            var modelFiles = assetLoader.FindModelFiles(projectRoot);
+            if (modelFiles.Count > 0)
+            {
+                var firstModel = serializer.LoadFromFile<ModelDefinition>(modelFiles[0]);
+                var assetPaths = assetLoader.ResolveAssetPaths(firstModel, projectRoot);
+                macroPaths = assetLoader.GetMacroPaths(assetPaths);
+            }
+            else
+            {
+                var legacyMacrosPath = Path.Combine(projectRoot, "macros");
+                macroPaths = Directory.Exists(legacyMacrosPath)
+                    ? new List<string> { legacyMacrosPath }
+                    : new List<string>();
+            }
             Console.WriteLine($"Macro paths: {macroPaths.Count}");
             foreach (var path in macroPaths)
             {
@@ -108,10 +120,9 @@ public static class RunOperationCommand
         }
         catch
         {
-            // Fall back to legacy macros/ directory
             var legacyMacrosPath = Path.Combine(projectRoot, "macros");
-            macroPaths = Directory.Exists(legacyMacrosPath) 
-                ? new List<string> { legacyMacrosPath } 
+            macroPaths = Directory.Exists(legacyMacrosPath)
+                ? new List<string> { legacyMacrosPath }
                 : new List<string>();
         }
 
@@ -304,15 +315,15 @@ public static class RunOperationCommand
             searchDir = currentDir;
         }
 
-        // Walk up directory tree looking for project.yml or macros/ directory (max 10 levels)
+        // Walk up directory tree looking for models/ or macros/ directory (max 10 levels)
         var originalSearchDir = searchDir;
         const int maxDepth = 10;
         for (var depth = 0; depth < maxDepth; depth++)
         {
-            var projectYml = Path.Combine(searchDir, "project.yml");
+            var modelsDir = Path.Combine(searchDir, "models");
             var macrosDir = Path.Combine(searchDir, "macros");
 
-            if (File.Exists(projectYml) || Directory.Exists(macrosDir))
+            if (Directory.Exists(modelsDir) || Directory.Exists(macrosDir))
             {
                 return searchDir;
             }

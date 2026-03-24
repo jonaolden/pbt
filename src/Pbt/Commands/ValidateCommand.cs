@@ -1,6 +1,5 @@
 using System.CommandLine;
 using Pbt.Core.Infrastructure;
-using Pbt.Core.Models;
 using Pbt.Core.Services;
 
 namespace Pbt.Commands;
@@ -59,47 +58,22 @@ public static class ValidateCommand
         }
 
         var serializer = new YamlSerializer();
-        var assetLoader = new AssetLoader(serializer);
         var validator = new Validator(serializer);
 
         if (verbose)
         {
             Console.WriteLine("Running validation checks:");
-            Console.WriteLine("  - Project configuration (project.yml)");
+            Console.WriteLine("  - Model configurations");
             Console.WriteLine("  - Asset path resolution");
             Console.WriteLine("  - Table definitions");
-            Console.WriteLine("  - Model definitions");
+            Console.WriteLine("  - Model references");
             Console.WriteLine("  - Relationships");
             Console.WriteLine("  - Measures");
             Console.WriteLine();
         }
 
-        // Load project and resolve asset paths
-        var (project, assetPaths) = assetLoader.LoadProject(projectPath);
-
-        if (verbose)
-        {
-            Console.WriteLine("Resolved asset paths:");
-            Console.WriteLine($"  Tables ({assetPaths.TablePaths.Count} paths):");
-            foreach (var path in assetPaths.TablePaths)
-            {
-                Console.WriteLine($"    - {path}");
-            }
-            Console.WriteLine($"  Models ({assetPaths.ModelPaths.Count} paths):");
-            foreach (var path in assetPaths.ModelPaths)
-            {
-                Console.WriteLine($"    - {path}");
-            }
-            Console.WriteLine($"  Macros ({assetPaths.MacroPaths.Count} paths):");
-            foreach (var path in assetPaths.MacroPaths)
-            {
-                Console.WriteLine($"    - {path}");
-            }
-            Console.WriteLine();
-        }
-
-        // Run validation with resolved asset paths
-        var result = validator.ValidateProjectWithAssets(projectPath, assetPaths);
+        // Run validation across all models found in models/ directory
+        var result = validator.ValidateProject(projectPath);
 
         // Display results
         if (result.IsValid && !result.HasWarnings)

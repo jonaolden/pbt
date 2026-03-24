@@ -79,11 +79,10 @@ This creates the following structure:
 
 ```
 my_project/
-├── project.yml           # Project configuration
 ├── tables/              # Table definitions (reusable)
 │   ├── dim_product.yaml
 │   └── fact_sales.yaml
-├── models/              # Model compositions
+├── models/              # Model compositions (each carries its own project config)
 │   └── sales_model.yaml
 ├── .pbt/        # Tool metadata
 └── target/              # Generated TMDL (created on build)
@@ -112,12 +111,19 @@ pbt list my_project --details
 
 ## Project Structure
 
-### Project Configuration (project.yml)
+### Model Configuration (models/*.yaml)
+
+Each model file is self-contained and carries both project-level and model-level configuration:
 
 ```yaml
-name: MyProject
-description: Power BI semantic model project
-compatibility_level: 1600  # Power BI compatibility level
+name: MyModel
+description: Power BI semantic model
+compatibility_level: 1600  # Power BI compatibility level (default: 1600)
+
+# Optional: explicit asset paths (defaults to tables/ and macros/ next to project root)
+# assets:
+#   project:
+#     - path: "."
 ```
 
 ### Table Definitions (tables/*.yaml)
@@ -279,12 +285,11 @@ pbt validate my_project --strict
 ```
 
 **What Gets Validated:**
-- Project structure (required directories exist)
-- Project configuration (`project.yml` is valid)
+- Project structure (models/ directory exists with at least one model file)
+- Model configuration (compatibility level, name)
 - Table definitions (data types, column names, hierarchies)
 - Model definitions (table references, relationships, measures)
 - DAX expressions (basic syntax checking)
-- Circular relationship detection
 
 ### list - List Tables and Models
 

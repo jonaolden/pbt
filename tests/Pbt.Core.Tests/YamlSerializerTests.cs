@@ -9,22 +9,22 @@ public class YamlSerializerTests
     private readonly YamlSerializer _serializer = new();
 
     [Fact]
-    public void LoadProjectDefinition_ShouldDeserialize()
+    public void LoadModelDefinition_ShouldDeserializeProjectLevelConfig()
     {
-        // Arrange
+        // Arrange — model.yaml now carries project-level configuration
         var yaml = @"
-name: SampleProject
-description: Example Power BI Composer project
+name: SalesAnalytics
+description: Example sales model
 compatibility_level: 1600
 ";
 
         // Act
-        var project = _serializer.Deserialize<ProjectDefinition>(yaml);
+        var model = _serializer.Deserialize<ModelDefinition>(yaml);
 
         // Assert
-        Assert.Equal("SampleProject", project.Name);
-        Assert.Equal("Example Power BI Composer project", project.Description);
-        Assert.Equal(1600, project.CompatibilityLevel);
+        Assert.Equal("SalesAnalytics", model.Name);
+        Assert.Equal("Example sales model", model.Description);
+        Assert.Equal(1600, model.CompatibilityLevel);
     }
 
     [Fact]

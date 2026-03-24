@@ -42,7 +42,7 @@ public class TmdlSerializationTests
 
             // Compose model
             var composer = new ModelComposer(registry);
-            var database = composer.ComposeModel(modelDef, 1600);
+            var database = composer.ComposeModel(modelDef);
 
             // Act - Serialize to TMDL
             TmdlSerializer.SerializeDatabaseToFolder(database, outputPath);
@@ -124,7 +124,7 @@ public class TmdlSerializationTests
             var modelDef = _serializer.LoadFromFile<ModelDefinition>(modelPath);
 
             var composer = new ModelComposer(registry);
-            var originalDatabase = composer.ComposeModel(modelDef, 1600);
+            var originalDatabase = composer.ComposeModel(modelDef);
 
             // Serialize to TMDL
             TmdlSerializer.SerializeDatabaseToFolder(originalDatabase, outputPath);

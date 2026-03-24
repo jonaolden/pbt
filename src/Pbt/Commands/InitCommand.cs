@@ -73,25 +73,7 @@ public static class InitCommand
         Console.WriteLine("  .pbt/");
         Console.WriteLine();
 
-        // Create project.yml
-        var projectName = Path.GetFileName(Path.GetFullPath(path));
-        var project = new ProjectDefinition
-        {
-            Name = projectName,
-            Description = $"{projectName} - Power BI semantic model",
-            CompatibilityLevel = 1600,
-            Assets = new Dictionary<string, List<AssetPathConfig>>
-            {
-                ["project"] = new List<AssetPathConfig>
-                {
-                    new AssetPathConfig { Path = "." }
-                }
-            }
-        };
-
         var serializer = new YamlSerializer();
-        serializer.SaveToFile(project, Path.Combine(path, "project.yml"));
-        Console.WriteLine("Created project.yml");
 
         // Create .gitignore
         var gitignoreContent = @"# Build output
@@ -186,11 +168,12 @@ in
         serializer.SaveToFile(salesTable, Path.Combine(projectPath, "tables", "fact_sales.yaml"));
         Console.WriteLine("  Created tables/fact_sales.yaml");
 
-        // Create example model
+        // Create example model (includes project-level configuration)
         var model = new ModelDefinition
         {
             Name = "SalesModel",
             Description = "Example sales analytics model",
+            CompatibilityLevel = 1600,
             Tables = new List<TableReference>
             {
                 new() { Ref = "DimProduct" },

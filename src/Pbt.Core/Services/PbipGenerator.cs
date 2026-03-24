@@ -16,7 +16,7 @@ public static class PbipGenerator
     /// Generate PBIP project structure
     /// </summary>
     /// <param name="database">TOM Database to serialize</param>
-    /// <param name="projectName">Project name from project.yml (used for folder naming)</param>
+    /// <param name="projectName">Project name (used for folder naming)</param>
     /// <param name="outputPath">Root output path for PBIP structure (typically target directory)</param>
     public static void GeneratePbipStructure(Database database, string projectName, string outputPath)
     {

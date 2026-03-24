@@ -53,15 +53,24 @@ public static class ListCommand
         var serializer = new YamlSerializer();
         var assetLoader = new AssetLoader(serializer);
 
-        // Load project and resolve asset paths
-        var (project, assetPaths) = assetLoader.LoadProject(projectPath);
+        // Find model files by convention
+        var modelFiles = assetLoader.FindModelFiles(projectPath);
 
-        Console.WriteLine($"Project: {project.Name}");
-        if (!string.IsNullOrWhiteSpace(project.Description))
+        if (modelFiles.Count == 0)
         {
-            Console.WriteLine($"Description: {project.Description}");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("No model files found in models/ directory.");
+            Console.ResetColor();
+            return;
         }
+
+        // Use the first model for project-level display info
+        var firstModel = serializer.LoadFromFile<ModelDefinition>(modelFiles[0]);
+        Console.WriteLine($"Project: {projectPath}");
         Console.WriteLine();
+
+        // Resolve asset paths from first model to list tables
+        var assetPaths = assetLoader.ResolveAssetPaths(firstModel, projectPath);
 
         // List tables from all configured paths
         if (assetPaths.TablePaths.Count > 0)
@@ -121,9 +130,7 @@ public static class ListCommand
             Console.WriteLine();
         }
 
-        // List models from all configured paths
-        var modelFiles = assetLoader.GetModelFiles(assetPaths);
-        
+        // List models
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine($"Models ({modelFiles.Count}):");
         Console.ResetColor();
@@ -175,23 +182,22 @@ public static class ListCommand
         }
         Console.WriteLine();
 
-        // List macros from all configured paths
+        // List macros from configured paths
         if (assetPaths.MacroPaths.Count > 0)
         {
             var macroNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var macroFiles = new List<string>();
-            
+
             foreach (var macrosPath in assetPaths.MacroPaths)
             {
                 if (Directory.Exists(macrosPath))
                 {
                     var files = Directory.GetFiles(macrosPath, "*.yaml")
                         .Concat(Directory.GetFiles(macrosPath, "*.yml"));
-                    
+
                     foreach (var file in files)
                     {
                         var macroName = Path.GetFileNameWithoutExtension(file);
-                        // Only add if not already seen (higher priority paths are processed first)
                         if (macroNames.Add(macroName))
                         {
                             macroFiles.Add(file);

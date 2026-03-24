@@ -10,7 +10,7 @@ public class ModelComposer
 {
     private readonly TableRegistry _tableRegistry;
     private LineageManifestService? _lineageService;
-    private ProjectDefinition? _project;
+    private ModelDefinition? _modelDef;
     private Dictionary<string, ConnectorConfig> _connectors = new();
 
     public ModelComposer(TableRegistry tableRegistry)
@@ -47,17 +47,17 @@ public class ModelComposer
     /// </summary>
     private EnvironmentDefinition? _environment;
 
-    public Database ComposeModel(ModelDefinition modelDef, int compatibilityLevel = 1600, LineageManifestService? lineageService = null, ProjectDefinition? project = null, string? projectRootPath = null, EnvironmentDefinition? environment = null)
+    public Database ComposeModel(ModelDefinition modelDef, LineageManifestService? lineageService = null, string? projectRootPath = null, EnvironmentDefinition? environment = null)
     {
         _lineageService = lineageService;
-        _project = project;
+        _modelDef = modelDef;
         _projectRootPath = projectRootPath;
         _environment = environment;
 
         var database = new Database
         {
             Name = modelDef.Name,
-            CompatibilityLevel = compatibilityLevel,
+            CompatibilityLevel = modelDef.CompatibilityLevel,
             Model = new Model
             {
                 Name = modelDef.Name
@@ -362,11 +362,11 @@ public class ModelComposer
             column.DisplayFolder = colDef.DisplayFolder;
         }
 
-        // Apply format string from column definition or project config
+        // Apply format string from column definition or model-level format_strings config
         var formatString = colDef.FormatString;
-        if (string.IsNullOrWhiteSpace(formatString) && _project != null)
+        if (string.IsNullOrWhiteSpace(formatString) && _modelDef != null)
         {
-            _project.FormatStrings.TryGetValue(colDef.Type, out formatString);
+            _modelDef.FormatStrings.TryGetValue(colDef.Type, out formatString);
         }
 
         if (!string.IsNullOrWhiteSpace(formatString))
@@ -434,9 +434,9 @@ public class ModelComposer
         }
 
         var formatString = colDef.FormatString;
-        if (string.IsNullOrWhiteSpace(formatString) && _project != null)
+        if (string.IsNullOrWhiteSpace(formatString) && _modelDef != null)
         {
-            _project.FormatStrings.TryGetValue(colDef.Type, out formatString);
+            _modelDef.FormatStrings.TryGetValue(colDef.Type, out formatString);
         }
 
         if (!string.IsNullOrWhiteSpace(formatString))
@@ -994,16 +994,8 @@ public class ModelComposer
     /// </summary>
     private void AddSharedExpressions(ModelDefinition modelDef, Model model)
     {
-        // Collect expressions from project level first, then model level (model overrides project)
+        // Collect all expressions from the model definition
         var expressionMap = new Dictionary<string, ExpressionDefinition>(StringComparer.OrdinalIgnoreCase);
-
-        if (_project?.Expressions != null)
-        {
-            foreach (var expr in _project.Expressions)
-            {
-                expressionMap[expr.Name] = expr;
-            }
-        }
 
         if (modelDef.Expressions != null)
         {

@@ -1,7 +1,9 @@
 namespace Pbt.Core.Models;
 
 /// <summary>
-/// Represents a model composition (from models/*.yaml)
+/// Represents a model composition (from models/*.yaml).
+/// Also carries project-level configuration (compatibility level, format strings, asset paths, build output)
+/// that was previously split into a separate project.yml file.
 /// </summary>
 public class ModelDefinition
 {
@@ -14,6 +16,29 @@ public class ModelDefinition
     /// Model description
     /// </summary>
     public string? Description { get; set; }
+
+    /// <summary>
+    /// Power BI compatibility level (default 1600)
+    /// </summary>
+    public int CompatibilityLevel { get; set; } = 1600;
+
+    /// <summary>
+    /// Format strings applied to columns by data type when no explicit format_string is set.
+    /// Maps type names (e.g., "int64", "decimal", "dateTime") to format strings.
+    /// </summary>
+    public Dictionary<string, string?> FormatStrings { get; set; } = new();
+
+    /// <summary>
+    /// Assets configuration — ordered by priority (first = highest).
+    /// Maps group names (e.g., "project", "common") to their asset paths.
+    /// When omitted, the tool uses the convention-based layout (tables/ and macros/ next to the project root).
+    /// </summary>
+    public Dictionary<string, List<AssetPathConfig>>? Assets { get; set; }
+
+    /// <summary>
+    /// Build output configuration
+    /// </summary>
+    public BuildConfig? Builds { get; set; }
 
     /// <summary>
     /// Tables included in this model (references to table registry)

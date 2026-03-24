@@ -195,23 +195,6 @@ public static class ImportCommand
 
         var serializer = new YamlSerializer();
 
-        // Create project.yml with assets config so 'pbt build' works immediately
-        var project = new ProjectDefinition
-        {
-            Name = database.Name,
-            Description = $"Imported from TMDL: {Path.GetFileName(tmdlPath)}",
-            CompatibilityLevel = database.CompatibilityLevel,
-            Assets = new Dictionary<string, List<AssetPathConfig>>
-            {
-                ["project"] = new List<AssetPathConfig>
-                {
-                    new AssetPathConfig { Path = "." }
-                }
-            }
-        };
-        serializer.SaveToFile(project, Path.Combine(outputPath, "project.yml"));
-        Console.WriteLine("Created project.yml");
-
         // Extract tables
         Console.WriteLine($"\nExtracting {database.Model.Tables.Count} tables:");
         foreach (var table in database.Model.Tables)
@@ -694,6 +677,7 @@ target/
         {
             Name = database.Name,
             Description = database.Model.Description,
+            CompatibilityLevel = database.CompatibilityLevel,
             Tables = new List<TableReference>(),
             Relationships = new List<RelationshipDefinition>(),
             Measures = new List<MeasureDefinition>()
