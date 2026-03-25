@@ -120,13 +120,14 @@ public static class PbipGenerator
         File.WriteAllText(Path.Combine(reportDefinitionPath, "report.json"), System.Text.Json.JsonSerializer.Serialize(reportJsonObj, jsonOptions));
 
         // 6b. Create a default blank page
-        var pageDir = Path.Combine(reportDefinitionPath, "pages", "ReportSection");
+        var pageName = "ReportSection";
+        var pageDir = Path.Combine(reportDefinitionPath, "pages", pageName);
         Directory.CreateDirectory(pageDir);
 
         var pageJsonObj = new Dictionary<string, object>
         {
             ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/1.0.0/schema.json",
-            ["name"] = "ReportSection",
+            ["name"] = pageName,
             ["displayName"] = "Page 1",
             ["displayOption"] = "FitToPage",
             ["height"] = 720.00,
@@ -134,11 +135,20 @@ public static class PbipGenerator
         };
         File.WriteAllText(Path.Combine(pageDir, "page.json"), System.Text.Json.JsonSerializer.Serialize(pageJsonObj, jsonOptions));
 
-        // 6c. version.json
+        // 6c. pages.json — page order and active page
+        var pagesJsonObj = new Dictionary<string, object>
+        {
+            ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
+            ["pageOrder"] = new[] { pageName },
+            ["activePageName"] = pageName
+        };
+        File.WriteAllText(Path.Combine(reportDefinitionPath, "pages", "pages.json"), System.Text.Json.JsonSerializer.Serialize(pagesJsonObj, jsonOptions));
+
+        // 6d. version.json
         var versionJson = new PbirVersionDefinition
         {
             Schema = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
-            Version = "2.0.0"
+            Version = "3.0.0"
         };
         File.WriteAllText(Path.Combine(reportDefinitionPath, "version.json"), System.Text.Json.JsonSerializer.Serialize(versionJson, jsonOptions));
 
