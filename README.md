@@ -82,15 +82,16 @@ This creates the following structure:
 
 ```
 my_project/
-├── tables/              # Table definitions (reusable)
+├── tables/                  # Table definitions (reusable)
 │   ├── dim_product.yaml
 │   └── fact_sales.yaml
-├── models/              # Model compositions (each carries its own project config)
+├── models/                  # Model compositions (each carries its own project config)
 │   └── sales_model.yaml
+├── scripts/                 # Pre-build hook scripts (optional)
+│   ├── normalize_columns.sh
+│   └── validate_naming.py
 ├── environments/            # Named environments (optional)
 │   └── dev.env.yml
-├── scripts/                 # Pre-build hook scripts (optional)
-│   └── normalize_columns.sh
 ├── .pbt/                    # Tool metadata
 └── target/                  # Generated output (created on build)
 ```

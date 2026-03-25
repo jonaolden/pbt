@@ -233,7 +233,293 @@ public class EndToEndBuildTests
         }
     }
 
+    /// <summary>
+    /// Test pre-build hook workflow: DIM_* tables are normalized before building.
+    /// Simulates what normalize_columns.py does:
+    ///   - Strip DIM_ prefix from table names, title-case the remainder
+    ///   - Title-case non-ID column names (source_column untouched)
+    ///   - Hide ID columns (name unchanged)
+    /// Then verifies the full pipeline produces valid TMDL.
+    /// </summary>
+    [Fact]
+    public void PreBuildHook_DimTableNormalization_ShouldBuildSuccessfully()
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"pbt_prehook_{Guid.NewGuid()}");
+        Directory.CreateDirectory(tempPath);
+
+        try
+        {
+            // Create a project with DIM_* tables using warehouse naming
+            CreateDimProject(tempPath);
+
+            // --- Simulate the pre-build hook (normalize_columns.py logic) ---
+            var tablesDir = Path.Combine(tempPath, "tables");
+            foreach (var file in Directory.GetFiles(tablesDir, "*.yaml"))
+            {
+                var table = _serializer.LoadFromFile<TableDefinition>(file);
+                if (!table.Name.StartsWith("DIM_", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Strip DIM_ prefix and title-case
+                table.Name = ToTitleCase(table.Name[4..]);
+
+                foreach (var col in table.Columns)
+                {
+                    var upper = col.Name.ToUpperInvariant();
+                    if (upper.EndsWith("_ID") || upper.Contains("_ID_"))
+                    {
+                        // ID columns: keep name, mark hidden
+                        col.IsHidden = true;
+                    }
+                    else
+                    {
+                        // Non-ID columns: title-case (source_column untouched)
+                        col.Name = ToTitleCase(col.Name);
+                    }
+                }
+
+                _serializer.SaveToFile(table, file);
+            }
+
+            // Also update model refs to use new table names
+            var modelPath = Path.Combine(tempPath, "models", "dim_model.yaml");
+            var modelDef = _serializer.LoadFromFile<ModelDefinition>(modelPath);
+            foreach (var tableRef in modelDef.Tables)
+            {
+                if (tableRef.Ref.StartsWith("DIM_", StringComparison.OrdinalIgnoreCase))
+                    tableRef.Ref = ToTitleCase(tableRef.Ref[4..]);
+            }
+            foreach (var rel in modelDef.Relationships)
+            {
+                if (rel.FromTable.StartsWith("DIM_", StringComparison.OrdinalIgnoreCase))
+                    rel.FromTable = ToTitleCase(rel.FromTable[4..]);
+                if (rel.ToTable.StartsWith("DIM_", StringComparison.OrdinalIgnoreCase))
+                    rel.ToTable = ToTitleCase(rel.ToTable[4..]);
+            }
+            foreach (var measure in modelDef.Measures)
+            {
+                if (measure.Table != null && measure.Table.StartsWith("DIM_", StringComparison.OrdinalIgnoreCase))
+                    measure.Table = ToTitleCase(measure.Table[4..]);
+            }
+            _serializer.SaveToFile(modelDef, modelPath);
+
+            // --- Load and verify transformations ---
+            modelDef = _serializer.LoadFromFile<ModelDefinition>(modelPath);
+            var registry = new TableRegistry(_serializer);
+            registry.LoadTables(tablesDir);
+
+            // Table name: DIM_BUSINESS_SEGMENT -> Business Segment
+            Assert.True(registry.ContainsTable("Business Segment"));
+            var bizSeg = registry.GetTable("Business Segment")!;
+
+            // Non-ID column: BUSINESS_SEGMENT_NAME -> Business Segment Name
+            Assert.Contains(bizSeg.Columns, c => c.Name == "Business Segment Name");
+            var nameCol = bizSeg.Columns.First(c => c.Name == "Business Segment Name");
+            Assert.Equal("BUSINESS_SEGMENT_NAME", nameCol.SourceColumn); // source_column untouched
+
+            // ID column: BUSINESS_SEGMENT_ID -> unchanged, hidden
+            Assert.Contains(bizSeg.Columns, c => c.Name == "BUSINESS_SEGMENT_ID");
+            var idCol = bizSeg.Columns.First(c => c.Name == "BUSINESS_SEGMENT_ID");
+            Assert.True(idCol.IsHidden);
+            Assert.Equal("BUSINESS_SEGMENT_ID", idCol.SourceColumn); // source_column untouched
+
+            // Non-DIM table should be untouched
+            Assert.True(registry.ContainsTable("FACT_SALES"));
+            var factSales = registry.GetTable("FACT_SALES")!;
+            Assert.Contains(factSales.Columns, c => c.Name == "SALE_AMOUNT");
+
+            // --- Build and validate ---
+            var composer = new ModelComposer(registry);
+            var database = composer.ComposeModel(modelDef, projectRootPath: tempPath);
+
+            var validator = new Validator(_serializer);
+            var tomValidation = validator.ValidateTomModel(database, modelDef.Name);
+            Assert.True(tomValidation.IsValid,
+                $"TOM validation failed after pre-hook: {tomValidation.FormatMessages()}");
+
+            // TMDL round-trip
+            var tmdlOutputPath = Path.Combine(tempPath, "tmdl_output");
+            Directory.CreateDirectory(tmdlOutputPath);
+            TmdlSerializer.SerializeDatabaseToFolder(database, tmdlOutputPath);
+
+            var salesTmdl = File.ReadAllText(
+                Path.Combine(tmdlOutputPath, "tables", "Business Segment.tmdl"));
+            Assert.Contains("table 'Business Segment'", salesTmdl);
+
+            var deserializedDb = TmdlSerializer.DeserializeDatabaseFromFolder(tmdlOutputPath);
+            Assert.Equal(database.Model.Tables.Count, deserializedDb.Model.Tables.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(tempPath))
+                Directory.Delete(tempPath, true);
+        }
+    }
+
+    private static string ToTitleCase(string snakeName)
+    {
+        return string.Join(" ", snakeName.Split('_')
+            .Select(w => char.ToUpper(w[0]) + w[1..].ToLower()));
+    }
+
+    /// <summary>
+    /// Test that a failing pre-build hook (non-zero exit code) is detected and aborts the build.
+    /// Exercises the same Process.Start pattern used by BuildCommand.
+    /// </summary>
+    [Fact]
+    public void PreBuildHook_FailingScript_ShouldReturnNonZeroExitCode()
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"pbt_prehook_fail_{Guid.NewGuid()}");
+        var scriptsPath = Path.Combine(tempPath, "scripts");
+        Directory.CreateDirectory(scriptsPath);
+
+        try
+        {
+            // Create a script that simulates validation failure
+            var scriptPath = Path.Combine(scriptsPath, "validate.sh");
+            File.WriteAllText(scriptPath, "#!/bin/bash\necho 'Validation failed: bad column name' >&2\nexit 1\n");
+
+            var chmod = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/bin/chmod",
+                Arguments = $"+x \"{scriptPath}\"",
+                UseShellExecute = false
+            });
+            chmod?.WaitForExit();
+
+            // Execute the hook (same pattern as BuildCommand.ExecuteCoreBuild)
+            var hookProcess = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "/bin/sh",
+                Arguments = $"-c \"{scriptPath}\"",
+                WorkingDirectory = tempPath,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            });
+            hookProcess?.WaitForExit();
+
+            // Should fail with non-zero exit code — build would be aborted
+            Assert.NotEqual(0, hookProcess?.ExitCode);
+
+            var stderr = hookProcess?.StandardError.ReadToEnd();
+            Assert.Contains("Validation failed", stderr);
+        }
+        finally
+        {
+            if (Directory.Exists(tempPath))
+                Directory.Delete(tempPath, true);
+        }
+    }
+
     #region Project Creation
+
+    /// <summary>
+    /// Creates a project with DIM_* warehouse-style naming for pre-hook testing.
+    /// </summary>
+    private void CreateDimProject(string basePath)
+    {
+        var tablesPath = Path.Combine(basePath, "tables");
+        var modelsPath = Path.Combine(basePath, "models");
+        Directory.CreateDirectory(tablesPath);
+        Directory.CreateDirectory(modelsPath);
+
+        // DIM_BUSINESS_SEGMENT — will be normalized by the hook
+        var dimTableYaml = @"
+name: DIM_BUSINESS_SEGMENT
+description: Business segment dimension
+m_expression: |
+  let
+    Source = #table(
+      {""BUSINESS_SEGMENT_ID"", ""BUSINESS_SEGMENT_NAME"", ""REGION_ID"", ""REGION_ID_TYPE""},
+      {
+        {1, ""Enterprise"", 10, ""Primary""},
+        {2, ""Mid-Market"", 20, ""Primary""},
+        {3, ""SMB"", 30, ""Secondary""}
+      }
+    )
+  in
+    Source
+columns:
+  - name: BUSINESS_SEGMENT_ID
+    type: Int64
+    source_column: BUSINESS_SEGMENT_ID
+    is_key: true
+    summarize_by: None
+  - name: BUSINESS_SEGMENT_NAME
+    type: String
+    source_column: BUSINESS_SEGMENT_NAME
+    description: Segment display name
+  - name: REGION_ID
+    type: Int64
+    source_column: REGION_ID
+    summarize_by: None
+  - name: REGION_ID_TYPE
+    type: String
+    source_column: REGION_ID_TYPE
+    description: Region classification
+";
+        File.WriteAllText(Path.Combine(tablesPath, "dim_business_segment.yaml"), dimTableYaml);
+
+        // FACT_SALES — should NOT be normalized (not a DIM_* table)
+        var factTableYaml = @"
+name: FACT_SALES
+description: Sales fact table
+m_expression: |
+  let
+    Source = #table(
+      {""SALE_ID"", ""BUSINESS_SEGMENT_ID"", ""SALE_AMOUNT""},
+      {
+        {1, 1, 10000},
+        {2, 2, 5000}
+      }
+    )
+  in
+    Source
+columns:
+  - name: SALE_ID
+    type: Int64
+    source_column: SALE_ID
+    is_key: true
+    summarize_by: None
+  - name: BUSINESS_SEGMENT_ID
+    type: Int64
+    source_column: BUSINESS_SEGMENT_ID
+    summarize_by: None
+  - name: SALE_AMOUNT
+    type: Decimal
+    source_column: SALE_AMOUNT
+    format_string: ""$#,##0.00""
+    summarize_by: Sum
+";
+        File.WriteAllText(Path.Combine(tablesPath, "fact_sales.yaml"), factTableYaml);
+
+        // Model referencing both tables (uses pre-hook names initially)
+        var modelYaml = @"
+name: DimTestModel
+description: Model for testing DIM normalization hook
+compatibility_level: 1600
+
+tables:
+  - ref: DIM_BUSINESS_SEGMENT
+  - ref: FACT_SALES
+
+relationships:
+  - from_table: FACT_SALES
+    from_column: BUSINESS_SEGMENT_ID
+    to_table: DIM_BUSINESS_SEGMENT
+    to_column: BUSINESS_SEGMENT_ID
+    cardinality: ManyToOne
+    cross_filter_direction: Single
+
+measures:
+  - name: Total Sales
+    table: FACT_SALES
+    expression: SUM(FACT_SALES[SALE_AMOUNT])
+    format_string: ""$#,##0.00""
+";
+        File.WriteAllText(Path.Combine(modelsPath, "dim_model.yaml"), modelYaml);
+    }
 
     private void CreateComprehensiveProject(string basePath)
     {

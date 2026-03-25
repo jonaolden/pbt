@@ -12,6 +12,9 @@ sample_project/
 │   └── datedim.yaml     # Date dimension with sort-by-column support
 ├── models/              # Model compositions
 │   └── sales_model.yaml # Full-featured model with relationships, measures, etc.
+├── scripts/             # Pre-build hook scripts (optional)
+│   ├── normalize_columns.sh  # Normalize source_column to uppercase
+│   └── validate_naming.py    # Enforce PascalCase naming conventions
 ├── environments/        # Named environment overrides (optional)
 │   └── dev.env.yml      # Development connection string overrides
 ├── target/              # Generated TMDL/PBIP output (created by build)
@@ -57,6 +60,22 @@ Contains reusable table definitions that can be referenced by multiple models:
   - `sort_by_column` (MonthName sorted by MonthNum)
   - Hidden helper columns (`MonthNum`)
 
+### scripts/
+
+Pre-build hook scripts that run before the build via `--pre-hook`. Use any language (bash, Python, PowerShell, Node.js). If a script exits with a non-zero code, the build is aborted.
+
+- **normalize_columns.sh** — Normalizes `source_column` values to UPPER_SNAKE_CASE. Useful when your data warehouse uses uppercase column names but you prefer lowercase in YAML.
+
+- **validate_naming.py** — Enforces naming conventions: PascalCase for table and column names, no spaces in `source_column` values. Fails the build if violations are found.
+
+```bash
+# Run a pre-build hook before building
+pbt build . --pre-hook "./scripts/normalize_columns.sh"
+
+# Chain validation with the build
+pbt build . --pre-hook "python3 ./scripts/validate_naming.py"
+```
+
 ### environments/
 
 - **dev.env.yml** — Overrides `ServerName` and `DatabaseName` expressions for the development environment. Use with `pbt build --env dev`.
@@ -78,6 +97,12 @@ pbt build ./sample_project --env dev
 
 # Dry run — validate and compose without writing files
 pbt build ./sample_project --dry-run
+
+# Run a pre-build hook script before building
+pbt build ./sample_project --pre-hook "./scripts/normalize_columns.sh"
+
+# Run a Python validation script as a pre-build hook
+pbt build ./sample_project --pre-hook "python3 ./scripts/validate_naming.py"
 
 # List tables and models
 pbt list ./sample_project
