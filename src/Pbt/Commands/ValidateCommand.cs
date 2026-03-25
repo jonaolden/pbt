@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Pbt.Core.Infrastructure;
 using Pbt.Core.Services;
+using Pbt.Infrastructure;
 
 namespace Pbt.Commands;
 
@@ -11,7 +12,7 @@ public static class ValidateCommand
         var projectPathArgument = new Argument<string>(
             "project-path",
             () => ".",
-            "Path to the project directory (defaults to current directory)");
+            "Path to the project directory or a model YAML file (defaults to current directory)");
 
         var verboseOption = new Option<bool>(
             "--verbose",
@@ -46,16 +47,12 @@ public static class ValidateCommand
         return command;
     }
 
-    private static void ExecuteValidate(string projectPath, bool verbose, bool strict)
+    private static void ExecuteValidate(string inputPath, bool verbose, bool strict)
     {
+        var (projectPath, _) = PathResolver.Resolve(inputPath);
+
         Console.WriteLine($"Validating project: {projectPath}");
         Console.WriteLine();
-
-        // Validate project path
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
-        }
 
         var serializer = new YamlSerializer();
         var validator = new Validator(serializer);

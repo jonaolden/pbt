@@ -248,13 +248,17 @@ pbt init my_project --examples
 ### build - Build PBIP Projects
 
 ```bash
-pbt build <project-path> [options]
+pbt build <project-path | model-file> [options]
 ```
 
 Builds a full PBIP project structure (`.pbip` + SemanticModel + Report) from YAML definitions. Use `pbt build model` for TMDL-only output.
 
+You can pass either a **project directory** or a **model YAML file** directly:
+- `pbt build my_project` — builds all models in `my_project/models/`
+- `pbt build models/sales_model.yaml` — builds only that model (project root inferred from file location)
+
 **Options:**
-- `--model <name>`: Build only the specified model
+- `--model <name>`: Build only the specified model (when passing a directory)
 - `--output <path>`: Override output directory (default: `<project>/target`)
 - `--no-lineage-tags --confirm`: Skip lineage tag generation (breaks connected reports)
 - `--env <name>`: Use a named environment (loads from `environments/<name>.env.yml`)
@@ -262,17 +266,20 @@ Builds a full PBIP project structure (`.pbip` + SemanticModel + Report) from YAM
 - `--pre-hook <command>`: Shell command to execute before building
 
 **Subcommands:**
-- `pbt build model <project-path>`: Build TMDL-only output (no PBIP wrapper)
+- `pbt build model <project-path | model-file>`: Build TMDL-only output (no PBIP wrapper)
 
 **Examples:**
 ```bash
-# Build full PBIP project
+# Build full PBIP project (all models)
 pbt build my_project
+
+# Build a single model by file path
+pbt build models/sales_model.yaml
 
 # Build TMDL-only
 pbt build model my_project
 
-# Build specific model
+# Build specific model by name
 pbt build my_project --model sales_model
 
 # Build with environment overrides
@@ -282,7 +289,7 @@ pbt build my_project --env dev
 pbt build my_project --dry-run
 
 # Run a pre-build script before building
-pbt build my_project --pre-hook "./scripts/normalize_columns.sh"
+pbt build my_project --pre-hook "python3 ./scripts/normalize_columns.py"
 
 # Build to custom output directory
 pbt build my_project --output /path/to/output
@@ -291,10 +298,10 @@ pbt build my_project --output /path/to/output
 ### validate - Validate Project
 
 ```bash
-pbt validate <project-path> [options]
+pbt validate <project-path | model-file> [options]
 ```
 
-Validates project configuration and definitions without building.
+Validates project configuration and definitions without building. Accepts a project directory or a model file path.
 
 **Options:**
 - `--verbose`: Show all validation checks performed
@@ -317,10 +324,10 @@ pbt validate my_project --strict
 ### list - List Tables and Models
 
 ```bash
-pbt list <project-path> [--details]
+pbt list <project-path | model-file> [--details]
 ```
 
-Lists all tables, models, and lineage information in the project.
+Lists all tables, models, and lineage information in the project. Accepts a project directory or a model file path.
 
 **Options:**
 - `--details`: Show detailed information about each table and model

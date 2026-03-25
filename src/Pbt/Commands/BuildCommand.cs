@@ -3,6 +3,7 @@ using Microsoft.AnalysisServices.Tabular;
 using Pbt.Core.Infrastructure;
 using Pbt.Core.Models;
 using Pbt.Core.Services;
+using Pbt.Infrastructure;
 
 namespace Pbt.Commands;
 
@@ -13,7 +14,7 @@ public static class BuildCommand
         var projectPathArgument = new Argument<string>(
             "project-path",
             () => ".",
-            "Path to the project directory (defaults to current directory)");
+            "Path to the project directory or a model YAML file (defaults to current directory)");
 
         var modelOption = new Option<string?>(
             "--model",
@@ -112,7 +113,7 @@ public static class BuildCommand
         var projectPathArgument = new Argument<string>(
             "project-path",
             () => ".",
-            "Path to the project directory (defaults to current directory)");
+            "Path to the project directory or a model YAML file (defaults to current directory)");
 
         var modelOption = new Option<string?>(
             "--model",
@@ -248,13 +249,16 @@ public static class BuildCommand
     #region Shared Build Logic
 
     private static List<(Database database, string modelFileName, string modelName)> ExecuteCoreBuild(
-        string projectPath,
+        string inputPath,
         string? modelName,
         bool noLineageTags,
         out LineageManifestService? lineageService,
         string? envName = null,
         string? preHook = null)
     {
+        // Resolve input: may be a project directory or a model YAML file
+        var (projectPath, modelFilter) = PathResolver.Resolve(inputPath);
+
         Console.WriteLine($"Building project: {projectPath}");
         Console.WriteLine();
 
@@ -281,12 +285,6 @@ public static class BuildCommand
             Console.WriteLine();
         }
 
-        // Validate project path
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
-        }
-
         var serializer = new YamlSerializer();
         var assetLoader = new AssetLoader(serializer);
         var validator = new Validator(serializer);
@@ -294,15 +292,17 @@ public static class BuildCommand
         // 1. Find model files by convention (models/ subdirectory)
         var modelFiles = assetLoader.FindModelFiles(projectPath);
 
-        if (modelName != null)
+        // Apply model filter: --model flag takes priority, then file-based filter from PathResolver
+        var effectiveModelFilter = modelName ?? modelFilter;
+        if (effectiveModelFilter != null)
         {
             modelFiles = modelFiles.Where(f =>
-                Path.GetFileNameWithoutExtension(f).Equals(modelName, StringComparison.OrdinalIgnoreCase))
+                Path.GetFileNameWithoutExtension(f).Equals(effectiveModelFilter, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             if (modelFiles.Count == 0)
             {
-                throw new FileNotFoundException($"Model '{modelName}' not found in models/ directory");
+                throw new FileNotFoundException($"Model '{effectiveModelFilter}' not found in models/ directory");
             }
         }
 
