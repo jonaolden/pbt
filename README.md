@@ -6,9 +6,12 @@ A semantic model composition tool for Power BI that enables version-controlled, 
 
 - **Reusable Table Definitions**: Define tables once in YAML, reference them in multiple models
 - **Model Composition**: Compose Power BI models by referencing tables and defining relationships/measures
+- **Advanced Model Features**: Calculation groups, perspectives, roles with RLS, field parameters
 - **Lineage Tag Management**: Deterministic lineage tag generation to prevent breaking existing Power BI reports
 - **Validation**: Comprehensive validation of project configuration before building
-- **TMDL Output**: Generates TMDL (Tabular Model Definition Language) for Power BI deployment
+- **TMDL & PBIP Output**: Generates TMDL or full PBIP project structure for Power BI deployment
+- **Pre-Build Hooks**: Run arbitrary scripts before building via `--pre-hook` (replaces built-in macros)
+- **Environment Support**: Named environments for expression overrides across dev/staging/prod
 - **Import/Export**: Import existing TMDL models to YAML format
 - **Version Control Friendly**: All definitions in human-readable YAML files
 
@@ -84,8 +87,12 @@ my_project/
 │   └── fact_sales.yaml
 ├── models/              # Model compositions (each carries its own project config)
 │   └── sales_model.yaml
-├── .pbt/        # Tool metadata
-└── target/              # Generated TMDL (created on build)
+├── environments/            # Named environments (optional)
+│   └── dev.env.yml
+├── scripts/                 # Pre-build hook scripts (optional)
+│   └── normalize_columns.sh
+├── .pbt/                    # Tool metadata
+└── target/                  # Generated output (created on build)
 ```
 
 ### 2. Validate Your Project
@@ -217,7 +224,7 @@ measures:
 ```
 
 **Cardinality Options**: `ManyToOne`, `OneToMany`, `OneToOne`, `ManyToMany`
-**Cross Filter Direction**: `Single`, `Both`, `None`
+**Cross Filter Direction**: `Single`, `Both`, `Automatic`
 
 ## Commands
 
@@ -237,29 +244,44 @@ Creates a new pbt (Power BI Build Tool) project with the standard directory stru
 pbt init my_project --examples
 ```
 
-### build - Build TMDL Models
+### build - Build PBIP Projects
 
 ```bash
 pbt build <project-path> [options]
 ```
 
-Builds TMDL models from YAML definitions.
+Builds a full PBIP project structure (`.pbip` + SemanticModel + Report) from YAML definitions. Use `pbt build model` for TMDL-only output.
 
 **Options:**
 - `--model <name>`: Build only the specified model
 - `--output <path>`: Override output directory (default: `<project>/target`)
-- `--no-lineage-tags`: Skip lineage tag generation
+- `--no-lineage-tags --confirm`: Skip lineage tag generation (breaks connected reports)
+- `--env <name>`: Use a named environment (loads from `environments/<name>.env.yml`)
+- `--dry-run`: Validate and compose model without writing output files
+- `--pre-hook <command>`: Shell command to execute before building
+
+**Subcommands:**
+- `pbt build model <project-path>`: Build TMDL-only output (no PBIP wrapper)
 
 **Examples:**
 ```bash
-# Build all models
+# Build full PBIP project
 pbt build my_project
+
+# Build TMDL-only
+pbt build model my_project
 
 # Build specific model
 pbt build my_project --model sales_model
 
-# Build without lineage tags
-pbt build my_project --no-lineage-tags
+# Build with environment overrides
+pbt build my_project --env dev
+
+# Dry run (validate without writing)
+pbt build my_project --dry-run
+
+# Run a pre-build script before building
+pbt build my_project --pre-hook "./scripts/normalize_columns.sh"
 
 # Build to custom output directory
 pbt build my_project --output /path/to/output
@@ -438,132 +460,47 @@ Deletes the lineage manifest. The next build will generate all new lineage tags.
 pbt lineage reset my_project --confirm
 ```
 
-### run-operation - Execute Macro Operations
+### Pre-Build Hooks
+
+Instead of a built-in transformation DSL, pbt uses **pre-build hooks** that let you run arbitrary scripts before the build. This keeps pbt focused on model composition while giving you full control over transformations.
 
 ```bash
-pbt run-operation <macro-name> [--args '<json>']
+pbt build my_project --pre-hook "./scripts/normalize_columns.sh"
 ```
 
-Executes a macro operation that applies bulk transformations to YAML files based on a pipeline definition.
+The hook runs in the project directory before any build steps. If the hook exits with a non-zero code, the build is aborted.
 
-**Arguments:**
-- `macro-name`: Name of the macro to execute (without .yaml extension)
+**Example scripts:**
 
-**Options:**
-- `--args '<json>'`: JSON string with macro arguments (default: `{}`)
-
-**Macro Arguments (JSON):**
-- `path`: File or directory to process (default: discovered project root)
-- `include`: Array of glob patterns to include (default: from macro targets or `models/**/*.yaml`)
-- `exclude`: Array of glob patterns to exclude
-- `dry_run`: Boolean to preview changes without writing (default: false)
-- `on_missing`: How to handle missing nodes - "skip" or "error" (default: "skip")
-- `print_changes_limit`: Max number of example changes to display (default: 20)
-
-**Examples:**
 ```bash
-# Execute macro with default settings
-pbt run-operation restore_source_column_name
-
-# Dry run to preview changes
-pbt run-operation restore_source_column_name --args '{"dry_run": true}'
-
-# Target specific file
-pbt run-operation restore_source_column_name --args '{"path": "tables/sales.yaml"}'
-
-# Custom include/exclude patterns
-pbt run-operation restore_source_column_name --args '{
-  "include": ["tables/*.yaml"],
-  "exclude": ["tables/temp*.yaml"],
-  "dry_run": true
-}'
-
-# Fail on missing nodes
-pbt run-operation restore_source_column_name --args '{"on_missing": "error"}'
-
-# Limit change output
-pbt run-operation restore_source_column_name --args '{"print_changes_limit": 5}'
+# scripts/normalize_columns.sh - Normalize source_column names to uppercase
+#!/bin/bash
+for f in tables/*.yaml; do
+  sed -i 's/source_column: \(.*\)/source_column: \U\1/' "$f"
+done
 ```
 
-**Macro Structure:**
-
-Macros are stored in `<project-root>/macros/` and define a pipeline of transformation steps:
-
-```yaml
-version: 1
-name: restore_source_column_name
-description: Normalize columns[*].source_column
-targets:
-  - files:
-      include:
-        - "tables/**/*.yaml"
-      exclude:
-        - "**/target/**"
-pipeline:
-  - id: whitespace_to_underscore
-    select:
-      path: "columns[*].source_column"
-    replace:
-      kind: regex
-      pattern: "\\s+"
-      with: "_"
-  - id: lowercase_to_uppercase
-    select:
-      path: "columns[*].source_column"
-    transform:
-      kind: upper
+```python
+# scripts/validate_naming.py - Enforce naming conventions
+import yaml, sys, glob
+errors = []
+for path in glob.glob("tables/*.yaml"):
+    with open(path) as f:
+        table = yaml.safe_load(f)
+    for col in table.get("columns", []):
+        if " " in col.get("source_column", ""):
+            errors.append(f"{path}: column '{col['name']}' has spaces in source_column")
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    sys.exit(1)
 ```
 
-**Macro Pipelines (Composing Macros):**
-
-You can create a macro that references other macros, allowing you to run multiple macros in sequence:
-
-```yaml
-version: 1
-name: full_cleanup_pipeline
-description: Complete cleanup pipeline that runs all cleanup macros in the correct order
-targets:
-  - files:
-      include:
-        - "tables/**/*.yaml"
-macros:
-  - restore_source_column_name
-  - restore_id_column_name
-  - cleanup_descriptions
-```
-
-This keeps individual macros specific and reusable while maximizing convenience. The pipeline steps from referenced macros are merged in order when the macro is loaded.
-
-**Example Usage:**
-```bash
-# Run individual macro
-pbt run-operation restore_source_column_name
-
-# Run entire pipeline with one command
-pbt run-operation full_cleanup_pipeline
-```
-
-**Available Transformations:**
-
-Replace operations:
-- `literal`: Replace exact string matches
-- `regex`: Replace using regular expressions with optional flags
-
-Transform operations:
-- `upper`: Convert to uppercase
-- `lower`: Convert to lowercase
-- `title`: Convert to title case
-- `trim`: Remove leading/trailing whitespace
-- `collapse_whitespace`: Replace multiple spaces with single space
-
-**Path Selection:**
-- Simple properties: `name`
-- Nested properties: `a.b.c`
-- Array wildcards: `columns[*].source_column`
-- Specific indices: `columns[0].name`
-
-**See Also:**
-- [examples/test-macros/README.md](examples/test-macros/README.md) - Complete macro examples
+**Why hooks instead of built-in macros?**
+- Use any language (bash, Python, PowerShell, Node.js)
+- Leverage existing tools (sed, jq, yq, custom scripts)
+- Full control over transformation logic
+- Easy to test and debug independently
+- No DSL to learn -- just shell commands
 
 ## Lineage Tag Management
 
@@ -673,6 +610,92 @@ tables:
   - ref: Inventory
 ```
 
+### Environments
+
+Named environments let you override expressions (e.g., connection strings) for dev/staging/prod:
+
+```yaml
+# environments/dev.env.yml
+name: dev
+expressions:
+  ServerName: '"dev-server.example.com" meta [IsParameterQuery=true, Type="Text"]'
+  DatabaseName: '"DevDB" meta [IsParameterQuery=true, Type="Text"]'
+```
+
+```bash
+pbt build my_project --env dev
+```
+
+Expressions defined in the environment override matching expressions from `project.yml` and model definitions. You can also reference system environment variables with `${ENV_VAR}` syntax.
+
+### Calculation Groups
+
+Define time intelligence and other calculation groups:
+
+```yaml
+# In model definition
+calculation_groups:
+  - name: Time Intelligence
+    precedence: 10
+    columns:
+      - name: Time Calculation
+        type: String
+        source_column: Name
+    calculation_items:
+      - name: Current
+        expression: SELECTEDMEASURE()
+        ordinal: 0
+      - name: YTD
+        expression: CALCULATE(SELECTEDMEASURE(), DATESYTD('Date'[Date]))
+        ordinal: 1
+```
+
+### Perspectives
+
+Scope visibility for different report audiences:
+
+```yaml
+perspectives:
+  - name: Sales Overview
+    tables:
+      - Sales
+      - Customers
+    measures:
+      - Total Sales
+      - Order Count
+    exclude_columns:
+      - Customers.InternalID
+```
+
+### Roles with Row-Level Security
+
+Define RLS rules declaratively:
+
+```yaml
+roles:
+  - name: RegionManager
+    model_permission: Read
+    table_permissions:
+      - table: Customers
+        filter_expression: '[Country] = USERPRINCIPALNAME()'
+```
+
+### Field Parameters
+
+Dynamic axis switching for reports:
+
+```yaml
+field_parameters:
+  - name: Sales Metric
+    values:
+      - name: Total Sales
+        expression: "NAMEOF('Sales'[Total Sales])"
+        ordinal: 0
+      - name: Order Count
+        expression: "NAMEOF('Sales'[Order Count])"
+        ordinal: 1
+```
+
 ### Custom M Expressions
 
 Tables support full Power Query M expressions for data sources:
@@ -769,13 +792,14 @@ Run the test suite:
 dotnet test
 ```
 
-Current test coverage: 50 tests covering:
+Current test coverage: 73 tests covering:
 - YAML serialization
 - Table registry operations
-- Model composition
+- Model composition (including calculation groups, perspectives, roles, field parameters)
 - Lineage tag management
 - Validation logic
 - Integration tests
+- End-to-end build tests with TMDL round-trip validation
 
 ## Contributing
 

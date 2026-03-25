@@ -19,11 +19,6 @@ public class ResolvedAssetPaths
     public List<string> MacroPaths { get; set; } = new();
 
     /// <summary>
-    /// Model paths ordered by priority (first = highest)
-    /// </summary>
-    public List<string> ModelPaths { get; set; } = new();
-
-    /// <summary>
     /// Build output path
     /// </summary>
     public string? BuildPath { get; set; }

@@ -1,0 +1,59 @@
+name: Customers
+description: Customer dimension table with geography hierarchy
+m_expression: |
+  let
+    Source = #table(
+      {"CustomerID", "CustomerName", "City", "Country", "Region"},
+      {
+        {101, "Acme Corp", "New York", "USA", "North America"},
+        {102, "Tech Solutions", "London", "UK", "Europe"},
+        {103, "Global Industries", "Tokyo", "Japan", "Asia"}
+      }
+    )
+  in
+    Source
+
+columns:
+  - name: CustomerID
+    type: Int64
+    source_column: CustomerID
+    description: Unique customer identifier
+    is_key: true
+    summarize_by: None
+
+  - name: CustomerName
+    type: String
+    source_column: CustomerName
+    description: Customer name
+    data_category: Organization
+
+  - name: City
+    type: String
+    source_column: City
+    description: City
+    data_category: City
+
+  - name: Country
+    type: String
+    source_column: Country
+    description: Country
+    data_category: Country
+    annotations:
+      PBI_GeoEncoding: Country
+
+  - name: Region
+    type: String
+    source_column: Region
+    description: Geographic region
+
+hierarchies:
+  - name: Geography
+    description: Geographic drill-down hierarchy
+    display_folder: Geo
+    levels:
+      - name: Region
+        column: Region
+      - name: Country
+        column: Country
+      - name: City
+        column: City

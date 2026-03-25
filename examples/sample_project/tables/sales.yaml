@@ -1,0 +1,82 @@
+name: Sales
+description: Sales fact table with multiple partitions
+partitions:
+  - name: Sales_Historical
+    mode: Import
+    m_expression: |
+      let
+        Source = #table(
+          {"OrderID", "OrderDate", "Amount", "CustomerID", "DateKey"},
+          {
+            {1, #date(2024, 1, 15), 1500.00, 101, 20240115},
+            {2, #date(2024, 1, 16), 2300.50, 102, 20240116}
+          }
+        )
+      in
+        Source
+  - name: Sales_Current
+    mode: Import
+    m_expression: |
+      let
+        Source = #table(
+          {"OrderID", "OrderDate", "Amount", "CustomerID", "DateKey"},
+          {
+            {3, #date(2024, 6, 1), 950.75, 101, 20240601}
+          }
+        )
+      in
+        Source
+
+columns:
+  - name: OrderID
+    type: Int64
+    source_column: OrderID
+    description: Unique order identifier
+    is_key: true
+    summarize_by: None
+
+  - name: OrderDate
+    type: DateTime
+    source_column: OrderDate
+    description: Date of the order
+
+  - name: Amount
+    type: Decimal
+    source_column: Amount
+    description: Order amount
+    format_string: "$#,##0.00"
+    summarize_by: Sum
+
+  - name: CustomerID
+    type: Int64
+    source_column: CustomerID
+    description: Customer foreign key
+    summarize_by: None
+
+  - name: DateKey
+    type: Int64
+    source_column: DateKey
+    description: Date dimension key
+    is_hidden: true
+    summarize_by: None
+
+  - name: IsLargeOrder
+    type: Boolean
+    expression: "IF([Amount] > 1000, TRUE(), FALSE())"
+    description: Calculated flag for high-value orders
+    display_folder: Flags
+
+measures:
+  - name: Total Sales
+    table: Sales
+    expression: SUM(Sales[Amount])
+    format_string: "$#,##0.00"
+    description: Total sales amount
+    display_folder: Sales Metrics
+
+  - name: Number of Orders
+    table: Sales
+    expression: COUNTROWS(Sales)
+    format_string: "#,##0"
+    description: Count of orders
+    display_folder: Sales Metrics

@@ -1,10 +1,11 @@
 name: SalesAnalytics
-description: Sales analytics model
+description: Sales analytics model showcasing all pbt features
 compatibility_level: 1600
 
 tables:
   - ref: Sales
   - ref: Customers
+  - ref: DateDim
 
 relationships:
   - from_table: Sales
@@ -14,25 +15,75 @@ relationships:
     cardinality: ManyToOne
     cross_filter_direction: Both
     active: true
+    rely_on_referential_integrity: true
+
+  - from_table: Sales
+    from_column: DateKey
+    to_table: DateDim
+    to_column: DateKey
+    cardinality: ManyToOne
+    cross_filter_direction: Single
+    active: true
 
 measures:
-  - name: Total Sales
-    table: Sales
-    expression: SUM(Sales[Amount])
-    format_string: "$#,##0.00"
-    description: Total sales amount
-    display_folder: Sales Metrics
-
-  - name: Number of Orders
-    table: Sales
-    expression: COUNTROWS(Sales)
-    format_string: "#,##0"
-    description: Count of orders
-    display_folder: Sales Metrics
-
   - name: Average Order Value
     table: Sales
     expression: DIVIDE([Total Sales], [Number of Orders])
     format_string: "$#,##0.00"
     description: Average value per order
     display_folder: Sales Metrics
+
+expressions:
+  - name: DatabaseName
+    kind: M
+    expression: '"SalesDB" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]'
+    description: Target database name
+
+calculation_groups:
+  - name: Time Intelligence
+    description: Time intelligence calculations
+    precedence: 10
+    columns:
+      - name: Time Calculation
+        type: String
+        source_column: Name
+    calculation_items:
+      - name: Current
+        expression: SELECTEDMEASURE()
+        ordinal: 0
+      - name: YTD
+        expression: CALCULATE(SELECTEDMEASURE(), DATESYTD(DateDim[DateKey]))
+        ordinal: 1
+      - name: PY
+        expression: CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR(DateDim[DateKey]))
+        ordinal: 2
+
+perspectives:
+  - name: Sales Overview
+    description: High-level sales view for executives
+    tables:
+      - Sales
+      - Customers
+    measures:
+      - Total Sales
+      - Number of Orders
+      - Average Order Value
+
+roles:
+  - name: RegionManager
+    description: Managers can only see their region's data
+    model_permission: Read
+    table_permissions:
+      - table: Customers
+        filter_expression: '[Country] = "USA"'
+
+field_parameters:
+  - name: Sales Metric
+    description: Dynamic metric selector for reports
+    values:
+      - name: Total Sales
+        expression: NAMEOF('Sales'[Total Sales])
+        ordinal: 0
+      - name: Number of Orders
+        expression: NAMEOF('Sales'[Number of Orders])
+        ordinal: 1

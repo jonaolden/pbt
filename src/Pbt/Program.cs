@@ -41,7 +41,6 @@ rootCommand.AddCommand(ValidateCommand.Create());
 rootCommand.AddCommand(ListCommand.Create());
 rootCommand.AddCommand(ImportCommand.Create());
 rootCommand.AddCommand(LineageCommand.Create());
-rootCommand.AddCommand(RunOperationCommand.Create());
 rootCommand.AddCommand(DiffCommand.Create());
 
 return await rootCommand.InvokeAsync(args);

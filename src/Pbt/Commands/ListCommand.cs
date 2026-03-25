@@ -182,44 +182,6 @@ public static class ListCommand
         }
         Console.WriteLine();
 
-        // List macros from configured paths
-        if (assetPaths.MacroPaths.Count > 0)
-        {
-            var macroNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var macroFiles = new List<string>();
-
-            foreach (var macrosPath in assetPaths.MacroPaths)
-            {
-                if (Directory.Exists(macrosPath))
-                {
-                    var files = Directory.GetFiles(macrosPath, "*.yaml")
-                        .Concat(Directory.GetFiles(macrosPath, "*.yml"));
-
-                    foreach (var file in files)
-                    {
-                        var macroName = Path.GetFileNameWithoutExtension(file);
-                        if (macroNames.Add(macroName))
-                        {
-                            macroFiles.Add(file);
-                        }
-                    }
-                }
-            }
-
-            if (macroFiles.Count > 0)
-            {
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.WriteLine($"Macros ({macroFiles.Count}):");
-                Console.ResetColor();
-
-                foreach (var macroFile in macroFiles.OrderBy(f => Path.GetFileNameWithoutExtension(f)))
-                {
-                    Console.WriteLine($"  - {Path.GetFileNameWithoutExtension(macroFile)}");
-                }
-                Console.WriteLine();
-            }
-        }
-
         // Check for lineage manifest
         var lineageManifestPath = Path.Combine(projectPath, ".pbt", "lineage.yaml");
         if (File.Exists(lineageManifestPath))

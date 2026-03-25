@@ -80,4 +80,5 @@ examples/**/target/
 
 # Power BI Composer
 tables/
+!examples/**/tables/
 projects/

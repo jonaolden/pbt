@@ -53,7 +53,7 @@ public class ProjectDefinition
 public class AssetPathConfig
 {
     /// <summary>
-    /// Path containing all asset types in subdirectories (tables/, macros/, models/)
+    /// Path containing all asset types in subdirectories (tables/, models/)
     /// </summary>
     public string? Path { get; set; }
 
@@ -61,11 +61,6 @@ public class AssetPathConfig
     /// Path to tables directory
     /// </summary>
     public string? Tables { get; set; }
-
-    /// <summary>
-    /// Path to macros directory
-    /// </summary>
-    public string? Macros { get; set; }
 
     /// <summary>
     /// Path to models directory
