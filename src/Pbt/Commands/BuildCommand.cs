@@ -192,9 +192,9 @@ public static class BuildCommand
         return command;
     }
 
-    private static void ExecuteModelBuild(string projectPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
+    private static void ExecuteModelBuild(string inputPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
     {
-        var models = ExecuteCoreBuild(projectPath, modelName, noLineageTags, out var lineageService, envName, preHook);
+        var models = ExecuteCoreBuild(inputPath, modelName, noLineageTags, out var lineageService, out var projectRoot, envName, preHook);
 
         if (dryRun)
         {
@@ -204,14 +204,14 @@ public static class BuildCommand
             return;
         }
 
-        var targetPath = outputPath ?? Path.Combine(projectPath, "target");
+        var targetPath = outputPath ?? Path.Combine(projectRoot, "target");
 
         foreach (var (database, _, modelName_) in models)
         {
             GenerateTmdlOutput(database, modelName_, targetPath, lineageService);
         }
 
-        SaveLineageManifest(lineageService, projectPath);
+        SaveLineageManifest(lineageService, projectRoot);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"\n✓ Build completed successfully");
@@ -220,9 +220,9 @@ public static class BuildCommand
 
     #endregion
 
-    private static void ExecuteProjectBuild(string projectPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
+    private static void ExecuteProjectBuild(string inputPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
     {
-        var models = ExecuteCoreBuild(projectPath, modelName, noLineageTags, out var lineageService, envName, preHook);
+        var models = ExecuteCoreBuild(inputPath, modelName, noLineageTags, out var lineageService, out var projectRoot, envName, preHook);
 
         if (dryRun)
         {
@@ -232,14 +232,14 @@ public static class BuildCommand
             return;
         }
 
-        var targetPath = outputPath ?? Path.Combine(projectPath, "target");
+        var targetPath = outputPath ?? Path.Combine(projectRoot, "target");
 
         foreach (var (database, _, modelName_) in models)
         {
             GeneratePbipOutput(database, modelName_, targetPath, lineageService);
         }
 
-        SaveLineageManifest(lineageService, projectPath);
+        SaveLineageManifest(lineageService, projectRoot);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"\n✓ Build completed successfully");
@@ -253,11 +253,13 @@ public static class BuildCommand
         string? modelName,
         bool noLineageTags,
         out LineageManifestService? lineageService,
+        out string projectRoot,
         string? envName = null,
         string? preHook = null)
     {
         // Resolve input: may be a project directory or a model YAML file
         var (projectPath, modelFilter) = PathResolver.Resolve(inputPath);
+        projectRoot = projectPath;
 
         Console.WriteLine($"Building project: {projectPath}");
         Console.WriteLine();
