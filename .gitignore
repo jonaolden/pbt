@@ -60,7 +60,7 @@ bld/
 # Project-specific
 
 # Generated TMDL output in examples
-#examples/**/target/
+examples/**/target/
 
 # Lineage manifest (typically committed, but can be ignored during development)
 # examples/**/.pbicomposer/lineage.yaml
