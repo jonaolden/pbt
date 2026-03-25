@@ -56,7 +56,6 @@ public sealed class ModelComposer
 
         var database = new Database
         {
-            Name = modelDef.Name,
             CompatibilityLevel = modelDef.CompatibilityLevel,
             Model = new Model
             {
@@ -65,14 +64,27 @@ public sealed class ModelComposer
         };
 
         var model = database.Model;
-        model.DiscourageImplicitMeasures = modelDef.DiscourageImplicitMeasures;
         model.Culture = modelDef.Culture;
+        model.DiscourageImplicitMeasures = modelDef.DiscourageImplicitMeasures;
+        model.DefaultPowerBIDataSourceVersion = Microsoft.AnalysisServices.Tabular.PowerBIDataSourceVersion.PowerBI_V3;
+        model.SourceQueryCulture = modelDef.SourceQueryCulture;
 
-        // Disable auto time intelligence by default (annotation __PBI_TimeIntelligenceEnabled)
+        // Data access options
+        model.DataAccessOptions.LegacyRedirects = true;
+        model.DataAccessOptions.ReturnErrorValuesAsNull = true;
+
+        // Disable auto time intelligence by default
         model.Annotations.Add(new Annotation
         {
             Name = "__PBI_TimeIntelligenceEnabled",
             Value = modelDef.AutoTimeIntelligence ? "1" : "0"
+        });
+
+        // Enable dev mode tooling
+        model.Annotations.Add(new Annotation
+        {
+            Name = "PBI_ProTooling",
+            Value = "[\"DevMode\"]"
         });
 
         // 1. Add tables

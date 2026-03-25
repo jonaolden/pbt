@@ -46,6 +46,10 @@ public static class PbipGenerator
         var reportDefinitionPath = Path.Combine(reportPath, "definition");
         Directory.CreateDirectory(reportDefinitionPath);
 
+        // Create .pbi and StaticResources directories (expected by Power BI Desktop)
+        Directory.CreateDirectory(Path.Combine(reportPath, ".pbi"));
+        Directory.CreateDirectory(Path.Combine(reportPath, "StaticResources", "RegisteredResources"));
+
         // 3. Serialize TMDL files to SemanticModel/definition folder
         TmdlSerializer.SerializeDatabaseToFolder(database, semanticModelDefinitionPath);
 

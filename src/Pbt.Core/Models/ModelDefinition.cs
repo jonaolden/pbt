@@ -35,6 +35,13 @@ public class ModelDefinition
     public string Culture { get; set; } = "en-US";
 
     /// <summary>
+    /// Source query culture/locale (e.g., "en-SE").
+    /// Controls how data source queries interpret locale-specific formats.
+    /// Defaults to "en-US" if not specified.
+    /// </summary>
+    public string SourceQueryCulture { get; set; } = "en-US";
+
+    /// <summary>
     /// When true, Power BI auto-generates time intelligence for date columns.
     /// Defaults to false (disabled) to avoid unwanted auto-generated date hierarchies.
     /// Set to true in model YAML to enable.

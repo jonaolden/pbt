@@ -59,7 +59,7 @@ public class TmdlSerializationTests
 
             // Assert - Database TMDL content
             var databaseTmdl = File.ReadAllText(Path.Combine(outputPath, "database.tmdl"));
-            Assert.Contains("database SalesAnalytics", databaseTmdl);
+            Assert.StartsWith("database", databaseTmdl.TrimStart());
             Assert.Contains("compatibilityLevel: 1700", databaseTmdl);
 
             // Assert - Model TMDL content
