@@ -243,9 +243,9 @@ public sealed class TmdlTableImporter
                 {
                     Directory.Delete(tempDir, recursive: true);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore cleanup errors
+                    Console.Error.WriteLine($"Warning: Failed to clean up temp directory '{tempDir}': {ex.Message}");
                 }
             }
         }
