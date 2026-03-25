@@ -225,6 +225,10 @@ public class EndToEndBuildTests
             var validator = new Validator(_serializer);
             var validation = validator.ValidateTomModel(deserializedDb, modelDef.Name);
             Assert.True(validation.IsValid, $"PBIP TMDL validation failed: {validation.FormatMessages()}");
+
+            // Validate PBIP structure (file placement matches Power BI Desktop expectations)
+            var pbipErrors = PbipGenerator.ValidatePbipStructure(targetPath, modelDef.Name);
+            Assert.Empty(pbipErrors);
         }
         finally
         {

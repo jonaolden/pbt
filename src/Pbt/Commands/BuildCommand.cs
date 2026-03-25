@@ -506,6 +506,21 @@ public static class BuildCommand
             Console.WriteLine($"  Lineage tags: {lineageService.NewTagCount} new, {lineageService.ExistingTagCount} existing");
         }
 
+        // Validate PBIP structure
+        var validationErrors = PbipGenerator.ValidatePbipStructure(targetPath, projectName);
+        if (validationErrors.Count > 0)
+        {
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("PBIP validation errors:");
+            foreach (var error in validationErrors)
+            {
+                Console.WriteLine($"  ✗ {error}");
+            }
+            Console.ResetColor();
+            throw new InvalidOperationException($"PBIP structure validation failed with {validationErrors.Count} error(s)");
+        }
+
         Console.WriteLine();
     }
 

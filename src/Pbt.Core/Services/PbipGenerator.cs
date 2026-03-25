@@ -77,7 +77,7 @@ public static class PbipGenerator
         };
         File.WriteAllText(pbipFilePath, System.Text.Json.JsonSerializer.Serialize(pbipContent, jsonOptions));
 
-        // 5. Generate <name>.Report/definition/definition.pbir
+        // 5. Generate <name>.Report/definition.pbir (directly in Report folder, NOT in definition/)
         var pbirContent = new PbirDefinition
         {
             Schema = "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
@@ -90,7 +90,7 @@ public static class PbipGenerator
                 }
             }
         };
-        File.WriteAllText(Path.Combine(reportDefinitionPath, "definition.pbir"), System.Text.Json.JsonSerializer.Serialize(pbirContent, jsonOptions));
+        File.WriteAllText(Path.Combine(reportPath, "definition.pbir"), System.Text.Json.JsonSerializer.Serialize(pbirContent, jsonOptions));
 
         // 6. Generate <name>.Report/definition/report.json
         var reportJson = new PbirReportDefinition
@@ -107,7 +107,7 @@ public static class PbipGenerator
         };
         File.WriteAllText(Path.Combine(reportDefinitionPath, "version.json"), System.Text.Json.JsonSerializer.Serialize(versionJson, jsonOptions));
 
-        // 8. Generate <name>.Report/definition/.platform (inside definition folder)
+        // 8. Generate <name>.Report/.platform (directly in Report folder, NOT in definition/)
         var reportPlatform = new PlatformFile
         {
             Schema = "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
@@ -122,7 +122,7 @@ public static class PbipGenerator
                 LogicalId = GenerateDeterministicGuid(projectName, "Report")
             }
         };
-        File.WriteAllText(Path.Combine(reportDefinitionPath, ".platform"), System.Text.Json.JsonSerializer.Serialize(reportPlatform, jsonOptions));
+        File.WriteAllText(Path.Combine(reportPath, ".platform"), System.Text.Json.JsonSerializer.Serialize(reportPlatform, jsonOptions));
 
         // 9. Generate <name>.SemanticModel/definition.pbism
         var pbismContent = new PbismDefinition
@@ -149,6 +149,89 @@ public static class PbipGenerator
             }
         };
         File.WriteAllText(Path.Combine(semanticModelPath, ".platform"), System.Text.Json.JsonSerializer.Serialize(semanticModelPlatform, jsonOptions));
+    }
+
+    /// <summary>
+    /// Validate that a PBIP output directory contains all required files in the correct locations.
+    /// Returns a list of errors (empty if valid).
+    /// </summary>
+    public static List<string> ValidatePbipStructure(string outputPath, string projectName)
+    {
+        var errors = new List<string>();
+        var sanitizedName = FileNameSanitizer.Sanitize(projectName);
+
+        void RequireFile(string relativePath)
+        {
+            if (!File.Exists(Path.Combine(outputPath, relativePath)))
+                errors.Add($"Missing required file: {relativePath}");
+        }
+
+        void RequireDirectory(string relativePath)
+        {
+            if (!Directory.Exists(Path.Combine(outputPath, relativePath)))
+                errors.Add($"Missing required directory: {relativePath}");
+        }
+
+        // .pbip root file
+        RequireFile($"{sanitizedName}.pbip");
+
+        // SemanticModel structure
+        RequireDirectory($"{sanitizedName}.SemanticModel");
+        RequireFile($"{sanitizedName}.SemanticModel/.platform");
+        RequireFile($"{sanitizedName}.SemanticModel/definition.pbism");
+        RequireDirectory($"{sanitizedName}.SemanticModel/definition");
+        RequireFile($"{sanitizedName}.SemanticModel/definition/database.tmdl");
+        RequireFile($"{sanitizedName}.SemanticModel/definition/model.tmdl");
+
+        // Report structure
+        RequireDirectory($"{sanitizedName}.Report");
+        RequireFile($"{sanitizedName}.Report/.platform");
+        RequireFile($"{sanitizedName}.Report/definition.pbir");
+        RequireDirectory($"{sanitizedName}.Report/definition");
+        RequireFile($"{sanitizedName}.Report/definition/report.json");
+
+        // Validate JSON files are parseable
+        var jsonFiles = new[]
+        {
+            $"{sanitizedName}.pbip",
+            $"{sanitizedName}.Report/definition.pbir",
+            $"{sanitizedName}.Report/.platform",
+            $"{sanitizedName}.SemanticModel/.platform",
+            $"{sanitizedName}.SemanticModel/definition.pbism",
+        };
+
+        foreach (var jsonFile in jsonFiles)
+        {
+            var fullPath = Path.Combine(outputPath, jsonFile);
+            if (File.Exists(fullPath))
+            {
+                try
+                {
+                    var content = File.ReadAllText(fullPath);
+                    JsonDocument.Parse(content);
+                }
+                catch (JsonException ex)
+                {
+                    errors.Add($"Invalid JSON in {jsonFile}: {ex.Message}");
+                }
+            }
+        }
+
+        // Validate TMDL can be deserialized
+        var tmdlPath = Path.Combine(outputPath, $"{sanitizedName}.SemanticModel", "definition");
+        if (Directory.Exists(tmdlPath))
+        {
+            try
+            {
+                TmdlSerializer.DeserializeDatabaseFromFolder(tmdlPath);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"TMDL deserialization failed: {ex.Message}");
+            }
+        }
+
+        return errors;
     }
 
     /// <summary>
