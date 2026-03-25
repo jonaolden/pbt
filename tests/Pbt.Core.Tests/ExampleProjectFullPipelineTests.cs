@@ -40,7 +40,7 @@ public class ExampleProjectFullPipelineTests
 
             var modelDef = _serializer.LoadFromFile<ModelDefinition>(modelFiles[0]);
             Assert.Equal("SalesAnalytics", modelDef.Name);
-            Assert.Equal(1600, modelDef.CompatibilityLevel);
+            Assert.Equal(1700, modelDef.CompatibilityLevel);
 
             var assetPaths = assetLoader.ResolveAssetPaths(modelDef, exampleProjectPath);
             Assert.True(assetPaths.TablePaths.Count > 0, "Should have table paths");

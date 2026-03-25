@@ -23,6 +23,12 @@ public class ModelDefinition
     public int CompatibilityLevel { get; set; } = 1600;
 
     /// <summary>
+    /// When true, Power BI discourages implicit measures (required for calculation groups).
+    /// Defaults to true. Set to false in model YAML to override.
+    /// </summary>
+    public bool DiscourageImplicitMeasures { get; set; } = true;
+
+    /// <summary>
     /// Format strings applied to columns by data type when no explicit format_string is set.
     /// Maps type names (e.g., "int64", "decimal", "dateTime") to format strings.
     /// </summary>
