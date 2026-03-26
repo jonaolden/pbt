@@ -244,9 +244,8 @@ public class EndToEndBuildTests
             Assert.True(File.Exists(Path.Combine(reportDefPath, "version.json")), "definition/version.json missing");
             Assert.True(Directory.Exists(Path.Combine(reportDefPath, "pages")), "definition/pages/ missing");
 
-            // pages.json at definition/ level (not inside pages/)
-            Assert.True(File.Exists(Path.Combine(reportDefPath, "pages.json")), "definition/pages.json missing");
-            Assert.False(File.Exists(Path.Combine(reportDefPath, "pages", "pages.json")), "pages.json should be at definition/ level, not inside pages/");
+            // pages.json inside pages/ (per PBI Desktop convention)
+            Assert.True(File.Exists(Path.Combine(reportDefPath, "pages", "pages.json")), "definition/pages/pages.json missing");
 
             // At least one page with page.json
             var pageDirs = Directory.GetDirectories(Path.Combine(reportDefPath, "pages"));

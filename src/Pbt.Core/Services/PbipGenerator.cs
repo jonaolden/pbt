@@ -46,9 +46,9 @@ public static class PbipGenerator
         var reportDefinitionPath = Path.Combine(reportPath, "definition");
         Directory.CreateDirectory(reportDefinitionPath);
 
-        // Create .pbi and StaticResources directories (expected by Power BI Desktop)
-        Directory.CreateDirectory(Path.Combine(reportPath, ".pbi"));
+        // Create StaticResources directories (expected by Power BI Desktop for PBIR format)
         Directory.CreateDirectory(Path.Combine(reportPath, "StaticResources", "RegisteredResources"));
+        Directory.CreateDirectory(Path.Combine(reportPath, "StaticResources", "SharedResources", "BaseThemes"));
 
         // 3. Serialize TMDL files to SemanticModel/definition folder
         TmdlSerializer.SerializeDatabaseToFolder(database, semanticModelDefinitionPath);
@@ -130,7 +130,7 @@ public static class PbipGenerator
 
         var pageJsonObj = new Dictionary<string, object>
         {
-            ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/1.0.0/schema.json",
+            ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.0.0/schema.json",
             ["name"] = pageName,
             ["displayName"] = "Page 1",
             ["displayOption"] = "FitToPage",
@@ -139,14 +139,14 @@ public static class PbipGenerator
         };
         File.WriteAllText(Path.Combine(pageDir, "page.json"), System.Text.Json.JsonSerializer.Serialize(pageJsonObj, jsonOptions));
 
-        // 6c. pages.json — page order and active page (at definition/ level, not inside pages/)
+        // 6c. pages.json — page order and active page (inside pages/ per PBI Desktop convention)
         var pagesJsonObj = new Dictionary<string, object>
         {
             ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
             ["pageOrder"] = new[] { pageName },
             ["activePageName"] = pageName
         };
-        File.WriteAllText(Path.Combine(reportDefinitionPath, "pages.json"), System.Text.Json.JsonSerializer.Serialize(pagesJsonObj, jsonOptions));
+        File.WriteAllText(Path.Combine(reportDefinitionPath, "pages", "pages.json"), System.Text.Json.JsonSerializer.Serialize(pagesJsonObj, jsonOptions));
 
         // 6d. version.json
         var versionJson = new PbirVersionDefinition
