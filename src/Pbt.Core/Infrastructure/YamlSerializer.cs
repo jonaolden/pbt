@@ -10,7 +10,7 @@ namespace Pbt.Core.Infrastructure;
 /// <summary>
 /// Service for serializing and deserializing YAML files with snake_case convention
 /// </summary>
-public class YamlSerializer
+public sealed class YamlSerializer
 {
     private readonly IDeserializer _deserializer;
     private readonly ISerializer _serializer;

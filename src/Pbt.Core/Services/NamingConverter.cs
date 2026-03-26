@@ -8,7 +8,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Converts database naming conventions (snake_case, UPPER_SNAKE) to Power BI naming (PascalCase)
 /// </summary>
-public class NamingConverter
+public sealed class NamingConverter
 {
     private readonly ScaffoldConfig _config;
 

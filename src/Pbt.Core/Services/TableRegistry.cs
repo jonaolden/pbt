@@ -6,7 +6,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Registry for table definitions loaded from configured asset paths
 /// </summary>
-public class TableRegistry
+public sealed class TableRegistry
 {
     private readonly Dictionary<string, TableDefinition> _tables = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _tableSourceGroup = new(StringComparer.OrdinalIgnoreCase);
@@ -176,9 +176,6 @@ public class TableRegistry
     /// <summary>
     /// Try to get a table definition by name
     /// </summary>
-    /// <param name="name">Table name (case-insensitive)</param>
-    /// <param name="table">Output table definition if found</param>
-    /// <returns>True if table was found</returns>
     public bool TryGetTable(string name, out TableDefinition? table)
     {
         return _tables.TryGetValue(name, out table);

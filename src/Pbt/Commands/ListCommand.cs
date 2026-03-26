@@ -2,6 +2,7 @@ using System.CommandLine;
 using Pbt.Core.Infrastructure;
 using Pbt.Core.Models;
 using Pbt.Core.Services;
+using Pbt.Infrastructure;
 
 namespace Pbt.Commands;
 
@@ -12,7 +13,7 @@ public static class ListCommand
         var projectPathArgument = new Argument<string>(
             "project-path",
             () => ".",
-            "Path to the project directory (defaults to current directory)");
+            "Path to the project directory or a model YAML file (defaults to current directory)");
 
         var detailsOption = new Option<bool>(
             "--details",
@@ -42,13 +43,9 @@ public static class ListCommand
         return command;
     }
 
-    private static void ExecuteList(string projectPath, bool showDetails)
+    private static void ExecuteList(string inputPath, bool showDetails)
     {
-        // Validate project path
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
-        }
+        var (projectPath, _) = PathResolver.Resolve(inputPath);
 
         var serializer = new YamlSerializer();
         var assetLoader = new AssetLoader(serializer);

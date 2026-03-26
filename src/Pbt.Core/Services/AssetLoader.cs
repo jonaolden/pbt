@@ -6,7 +6,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Represents the resolved asset paths for a project, organized by asset type
 /// </summary>
-public class ResolvedAssetPaths
+public sealed class ResolvedAssetPaths
 {
     /// <summary>
     /// Table paths ordered by priority (first = highest)
@@ -34,7 +34,7 @@ public class ResolvedAssetPaths
 /// Model files are discovered by convention (models/ subdirectory of the project root).
 /// Each model carries its own asset configuration.
 /// </summary>
-public class AssetLoader
+public sealed class AssetLoader
 {
     private readonly YamlSerializer _serializer;
 

@@ -4,7 +4,7 @@ using Pbt.Core.Models;
 
 namespace Pbt.Core.Services;
 
-public class TmdlTableImporter
+public sealed class TmdlTableImporter
 {
     private readonly YamlSerializer _serializer;
 
@@ -243,9 +243,9 @@ public class TmdlTableImporter
                 {
                     Directory.Delete(tempDir, recursive: true);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore cleanup errors
+                    Console.Error.WriteLine($"Warning: Failed to clean up temp directory '{tempDir}': {ex.Message}");
                 }
             }
         }

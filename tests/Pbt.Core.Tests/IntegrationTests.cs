@@ -42,7 +42,7 @@ public class IntegrationTests
 
         // Assert - Model carries project-level config
         Assert.Equal("SalesAnalytics", model.Name);
-        Assert.Equal(1600, model.CompatibilityLevel);
+        Assert.Equal(1700, model.CompatibilityLevel);
 
         // Assert - Tables loaded
         Assert.Equal(3, registry.Count);

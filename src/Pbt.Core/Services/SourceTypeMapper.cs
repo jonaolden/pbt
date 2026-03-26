@@ -7,7 +7,7 @@ namespace Pbt.Core.Services;
 /// Maps database types to M and TMDL types using source-specific configuration
 /// Supports dual type conversion for query folding optimization
 /// </summary>
-public class SourceTypeMapper
+public sealed class SourceTypeMapper
 {
     private readonly SourceTypeConfig _config;
 

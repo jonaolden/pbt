@@ -8,7 +8,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Service for managing lineage tag manifests
 /// </summary>
-public class LineageManifestService
+public sealed class LineageManifestService
 {
     private readonly YamlSerializer _serializer;
     private LineageManifest _manifest;

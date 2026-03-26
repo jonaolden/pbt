@@ -1,0 +1,56 @@
+version: 1
+generated_at: 2026-03-26T15:40:33.4154920Z
+tables:
+  Sales:
+    self: 2b25b94b-b008-5b1b-71cb-28c3c5a2bf57
+    columns:
+      OrderID: d12cd793-13eb-6c5e-a8d6-30052d5e8f40
+      OrderDate: 9f201f30-dd5c-6626-d646-9e1496b73060
+      Amount: 32aa192d-29cf-5c86-e9b1-f104be6b8354
+      CustomerID: 90287973-a2db-7813-f87f-0819e549fda5
+      DateKey: a39713ff-cbe1-9d41-5300-00cb007cbbde
+      IsLargeOrder: 41bee066-bac4-b123-139f-345c4ea1e85b
+    measures:
+      Total Sales: b4865325-66bb-d9c6-123b-82d40cead253
+      Number of Orders: 5a3c895f-f57d-dbb5-4d30-858a4c779188
+      Average Order Value: c2e78296-765d-41f9-875f-6fd0f541b405
+    hierarchies: {}
+  Customers:
+    self: 3532232b-e8bc-e509-52cf-fa5188983b74
+    columns:
+      CustomerID: b9846c4b-62af-531f-dd93-d85cd697e375
+      CustomerName: ea52cd33-0bde-217a-01b2-7439e7f4b61d
+      City: 77129f24-98f0-39ee-29e3-0146a1c81973
+      Country: 59f8b26b-3dde-4549-ecf4-777bb8846de7
+      Region: 93f71f27-1c44-f482-f50c-25b34809cb2d
+    measures: {}
+    hierarchies:
+      Geography: f4b466e6-d202-3541-05e9-dd43d8eba8d9
+  DateDim:
+    self: 3c557afe-6025-bc0a-944e-5c396804e5c8
+    columns:
+      DateKey: d5bb8270-a301-0285-15d1-0c7738f1031a
+      Year: 7a513f0b-60d7-2d06-366f-23250f965ee7
+      MonthNum: 2d42b599-a7b8-f8ee-96a5-40d2a29529e0
+      MonthName: 84d9efdb-fca2-716b-8c00-9619a9fa8c71
+      Quarter: 05150bce-0afe-f9b9-c40e-b13f90182bf5
+    measures: {}
+    hierarchies: {}
+  Time Intelligence:
+    self: bfcb6d38-3f72-7bbd-4ece-e941e9a72eba
+    columns:
+      Time Calculation: 06baf7b5-a345-2ddf-452a-ad9b3e153e51
+    measures: {}
+    hierarchies: {}
+  Sales Metric:
+    self: f2d23edd-9bfb-acae-b3d5-1d7f3b4c00de
+    columns:
+      Sales Metric: d0bbc3e8-8328-9a32-ac11-54a5a3c9ee0d
+      Sales Metric Fields: f08d6334-6e83-3852-0f7b-58a6af561a17
+      Sales Metric Order: 7588c46f-55ce-09ec-2811-d310de77210d
+    measures: {}
+    hierarchies: {}
+relationships:
+  Sales.CustomerID->Customers.CustomerID: 33db78ea-8975-6858-7098-bb61e5750bc9
+  Sales.DateKey->DateDim.DateKey: d64f9711-98b1-72f8-60ac-c0837ad1c7e4
+  Expression:DatabaseName: 471273a9-ac0b-ea7a-5e6e-a002ebeed97f

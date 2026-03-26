@@ -1,0 +1,20 @@
+/// Time intelligence calculations
+table 'Time Intelligence'
+	lineageTag: bfcb6d38-3f72-7bbd-4ece-e941e9a72eba
+
+	calculationGroup
+		precedence: 10
+
+		calculationItem Current = SELECTEDMEASURE()
+
+		calculationItem YTD = CALCULATE(SELECTEDMEASURE(), DATESYTD(DateDim[DateKey]))
+
+		calculationItem PY = CALCULATE(SELECTEDMEASURE(), SAMEPERIODLASTYEAR(DateDim[DateKey]))
+
+	column 'Time Calculation'
+		dataType: string
+		lineageTag: 06baf7b5-a345-2ddf-452a-ad9b3e153e51
+		sourceColumn: Name
+
+	partition 'Time Intelligence' = calculationGroup
+

@@ -46,6 +46,10 @@ public static class PbipGenerator
         var reportDefinitionPath = Path.Combine(reportPath, "definition");
         Directory.CreateDirectory(reportDefinitionPath);
 
+        // Create StaticResources directories (expected by Power BI Desktop for PBIR format)
+        Directory.CreateDirectory(Path.Combine(reportPath, "StaticResources", "RegisteredResources"));
+        Directory.CreateDirectory(Path.Combine(reportPath, "StaticResources", "SharedResources", "BaseThemes"));
+
         // 3. Serialize TMDL files to SemanticModel/definition folder
         TmdlSerializer.SerializeDatabaseToFolder(database, semanticModelDefinitionPath);
 
@@ -77,7 +81,7 @@ public static class PbipGenerator
         };
         File.WriteAllText(pbipFilePath, System.Text.Json.JsonSerializer.Serialize(pbipContent, jsonOptions));
 
-        // 5. Generate <name>.Report/definition/definition.pbir
+        // 5. Generate <name>.Report/definition.pbir (directly in Report folder, NOT in definition/)
         var pbirContent = new PbirDefinition
         {
             Schema = "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
@@ -90,16 +94,62 @@ public static class PbipGenerator
                 }
             }
         };
-        File.WriteAllText(Path.Combine(reportDefinitionPath, "definition.pbir"), System.Text.Json.JsonSerializer.Serialize(pbirContent, jsonOptions));
+        File.WriteAllText(Path.Combine(reportPath, "definition.pbir"), System.Text.Json.JsonSerializer.Serialize(pbirContent, jsonOptions));
 
-        // 6. Generate <name>.Report/definition/report.json
-        var reportJson = new PbirReportDefinition
+        // 6. Generate <name>.Report/definition/ content (PBIR enhanced format)
+        //    Uses individual page/visual files instead of a monolithic report.json
+
+        // 6a. report.json — minimal valid structure per schema 3.0.0
+        //     Required: $schema, themeCollection (with baseTheme containing name, reportVersionAtImport object, type)
+        //     reportVersionAtImport is an object with visual/page/report version strings, NOT a plain string
+        //     These versions must match realistic PBI Desktop internal versions (not schema versions)
+        //     datasetBinding is NOT allowed by the schema (additionalProperties: false)
+        var reportJsonObj = new Dictionary<string, object>
         {
-            Schema = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/3.0.0/schema.json"
+            ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/3.0.0/schema.json",
+            ["themeCollection"] = new Dictionary<string, object>
+            {
+                ["baseTheme"] = new Dictionary<string, object>
+                {
+                    ["name"] = "CY24SU05",
+                    ["reportVersionAtImport"] = new Dictionary<string, object>
+                    {
+                        ["visual"] = "1.8.90",
+                        ["page"] = "1.3.90",
+                        ["report"] = "2.0.90"
+                    },
+                    ["type"] = "SharedResources"
+                }
+            }
         };
-        File.WriteAllText(Path.Combine(reportDefinitionPath, "report.json"), System.Text.Json.JsonSerializer.Serialize(reportJson, jsonOptions));
+        File.WriteAllText(Path.Combine(reportDefinitionPath, "report.json"), System.Text.Json.JsonSerializer.Serialize(reportJsonObj, jsonOptions));
 
-        // 7. Generate <name>.Report/definition/version.json
+        // 6b. Create a default blank page
+        var pageName = "ReportSection";
+        var pageDir = Path.Combine(reportDefinitionPath, "pages", pageName);
+        Directory.CreateDirectory(pageDir);
+
+        var pageJsonObj = new Dictionary<string, object>
+        {
+            ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.0.0/schema.json",
+            ["name"] = pageName,
+            ["displayName"] = "Page 1",
+            ["displayOption"] = "FitToPage",
+            ["height"] = 720.00,
+            ["width"] = 1280.00
+        };
+        File.WriteAllText(Path.Combine(pageDir, "page.json"), System.Text.Json.JsonSerializer.Serialize(pageJsonObj, jsonOptions));
+
+        // 6c. pages.json — page order and active page (inside pages/ per PBI Desktop convention)
+        var pagesJsonObj = new Dictionary<string, object>
+        {
+            ["$schema"] = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
+            ["pageOrder"] = new[] { pageName },
+            ["activePageName"] = pageName
+        };
+        File.WriteAllText(Path.Combine(reportDefinitionPath, "pages", "pages.json"), System.Text.Json.JsonSerializer.Serialize(pagesJsonObj, jsonOptions));
+
+        // 6d. version.json — PBIR definition version (2.0 is the current stable version)
         var versionJson = new PbirVersionDefinition
         {
             Schema = "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
@@ -107,7 +157,7 @@ public static class PbipGenerator
         };
         File.WriteAllText(Path.Combine(reportDefinitionPath, "version.json"), System.Text.Json.JsonSerializer.Serialize(versionJson, jsonOptions));
 
-        // 8. Generate <name>.Report/definition/.platform (inside definition folder)
+        // 8. Generate <name>.Report/.platform (directly in Report folder, NOT in definition/)
         var reportPlatform = new PlatformFile
         {
             Schema = "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
@@ -122,7 +172,7 @@ public static class PbipGenerator
                 LogicalId = GenerateDeterministicGuid(projectName, "Report")
             }
         };
-        File.WriteAllText(Path.Combine(reportDefinitionPath, ".platform"), System.Text.Json.JsonSerializer.Serialize(reportPlatform, jsonOptions));
+        File.WriteAllText(Path.Combine(reportPath, ".platform"), System.Text.Json.JsonSerializer.Serialize(reportPlatform, jsonOptions));
 
         // 9. Generate <name>.SemanticModel/definition.pbism
         var pbismContent = new PbismDefinition
@@ -149,6 +199,50 @@ public static class PbipGenerator
             }
         };
         File.WriteAllText(Path.Combine(semanticModelPath, ".platform"), System.Text.Json.JsonSerializer.Serialize(semanticModelPlatform, jsonOptions));
+    }
+
+    /// <summary>
+    /// Validate that a PBIP output directory contains all required files in the correct locations.
+    /// Uses PbipValidator for comprehensive PBIR-format validation including:
+    /// TMDL deserialization, report structure, JSON parseability, and encoding checks.
+    /// Returns a list of errors (empty if valid).
+    /// </summary>
+    public static List<string> ValidatePbipStructure(string outputPath, string projectName)
+    {
+        var errors = new List<string>();
+        var sanitizedName = FileNameSanitizer.Sanitize(projectName);
+
+        // Validate .pbip root file and platform files exist (not covered by PbipValidator)
+        void RequireFile(string relativePath)
+        {
+            if (!File.Exists(Path.Combine(outputPath, relativePath)))
+                errors.Add($"Missing required file: {relativePath}");
+        }
+
+        void RequireDirectory(string relativePath)
+        {
+            if (!Directory.Exists(Path.Combine(outputPath, relativePath)))
+                errors.Add($"Missing required directory: {relativePath}");
+        }
+
+        RequireFile($"{sanitizedName}.pbip");
+        RequireDirectory($"{sanitizedName}.SemanticModel");
+        RequireFile($"{sanitizedName}.SemanticModel/.platform");
+        RequireFile($"{sanitizedName}.SemanticModel/definition.pbism");
+        RequireDirectory($"{sanitizedName}.Report");
+        RequireFile($"{sanitizedName}.Report/.platform");
+
+        // Delegate to PbipValidator for comprehensive PBIR validation
+        errors.AddRange(PbipValidator.ValidateSemanticModel(outputPath));
+
+        var reportFolder = Path.Combine(outputPath, $"{sanitizedName}.Report");
+        if (Directory.Exists(reportFolder))
+        {
+            errors.AddRange(PbipValidator.ValidateReportStructure(reportFolder));
+            errors.AddRange(PbipValidator.ValidateJsonFiles(reportFolder));
+        }
+
+        return errors;
     }
 
     /// <summary>
@@ -226,6 +320,42 @@ public static class PbipGenerator
     {
         [JsonPropertyName("$schema")]
         public string Schema { get; set; } = string.Empty;
+
+        [JsonPropertyName("themeCollection")]
+        public ReportThemeCollection ThemeCollection { get; set; } = new();
+
+        [JsonPropertyName("datasetBinding")]
+        public ReportDatasetBinding DatasetBinding { get; set; } = new();
+    }
+
+    private class ReportThemeCollection
+    {
+        [JsonPropertyName("baseTheme")]
+        public ReportTheme BaseTheme { get; set; } = new();
+    }
+
+    private class ReportTheme
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "CY24SU06";
+
+        [JsonPropertyName("reportVersionAtImport")]
+        public string ReportVersionAtImport { get; set; } = "5.50";
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = "SharedResources";
+    }
+
+    private class ReportDatasetBinding
+    {
+        [JsonPropertyName("datasetReference")]
+        public ReportDatasetReference DatasetReference { get; set; } = new();
+    }
+
+    private class ReportDatasetReference
+    {
+        [JsonPropertyName("targetType")]
+        public int TargetType { get; set; } = 1;
     }
 
     private class PbirVersionDefinition

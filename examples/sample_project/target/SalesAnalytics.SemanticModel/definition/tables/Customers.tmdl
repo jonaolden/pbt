@@ -1,0 +1,71 @@
+/// Customer dimension table with geography hierarchy
+table Customers
+	lineageTag: 3532232b-e8bc-e509-52cf-fa5188983b74
+
+	/// Unique customer identifier
+	column CustomerID
+		dataType: int64
+		isKey
+		lineageTag: b9846c4b-62af-531f-dd93-d85cd697e375
+		summarizeBy: none
+		sourceColumn: CustomerID
+
+	/// Customer name
+	column CustomerName
+		dataType: string
+		lineageTag: ea52cd33-0bde-217a-01b2-7439e7f4b61d
+		dataCategory: Organization
+		sourceColumn: CustomerName
+
+	/// City
+	column City
+		dataType: string
+		lineageTag: 77129f24-98f0-39ee-29e3-0146a1c81973
+		dataCategory: City
+		sourceColumn: City
+
+	/// Country
+	column Country
+		dataType: string
+		lineageTag: 59f8b26b-3dde-4549-ecf4-777bb8846de7
+		dataCategory: Country
+		sourceColumn: Country
+
+		annotation PBI_GeoEncoding = Country
+
+	/// Geographic region
+	column Region
+		dataType: string
+		lineageTag: 93f71f27-1c44-f482-f50c-25b34809cb2d
+		sourceColumn: Region
+
+	/// Geographic drill-down hierarchy
+	hierarchy Geography
+		displayFolder: Geo
+		lineageTag: f4b466e6-d202-3541-05e9-dd43d8eba8d9
+
+		level Region
+			column: Region
+
+		level Country
+			column: Country
+
+		level City
+			column: City
+
+	partition Customers = m
+		source = ```
+				let
+				  Source = #table(
+				    {"CustomerID", "CustomerName", "City", "Country", "Region"},
+				    {
+				      {101, "Acme Corp", "New York", "USA", "North America"},
+				      {102, "Tech Solutions", "London", "UK", "Europe"},
+				      {103, "Global Industries", "Tokyo", "Japan", "Asia"}
+				    }
+				  )
+				in
+				  Source
+				
+				```
+

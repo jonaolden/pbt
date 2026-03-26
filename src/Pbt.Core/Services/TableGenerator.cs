@@ -6,7 +6,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Generates TableDefinition from CSV schema rows
 /// </summary>
-public class TableGenerator
+public sealed class TableGenerator
 {
     private readonly ScaffoldConfig _config;
     private readonly TypeMapper? _typeMapper;

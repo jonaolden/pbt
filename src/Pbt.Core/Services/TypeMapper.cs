@@ -6,7 +6,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Maps database types to Power BI types using configuration
 /// </summary>
-public class TypeMapper
+public sealed class TypeMapper
 {
     private readonly ScaffoldConfig _config;
 
