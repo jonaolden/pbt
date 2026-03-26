@@ -73,6 +73,10 @@ examples/**/target/
 *.swp
 *~.nib
 
+# Environment files (credentials)
+.env
+.env.local
+
 # JetBrider Rider
 .idea/
 *.sln.iml

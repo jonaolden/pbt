@@ -10,11 +10,13 @@ public static class ImportCommand
 {
     public static Command Create()
     {
-        var command = new Command("import", "Import TMDL models or tables to YAML format");
+        var command = new Command("import",
+            "Import TMDL models, tables, or Snowflake metadata to YAML format");
 
         // Add subcommands
         command.AddCommand(CreateModelSubcommand());
         command.AddCommand(CreateTableSubcommand());
+        command.AddCommand(CreateSnowflakeSubcommand());
 
         return command;
     }
@@ -487,6 +489,325 @@ target/
         Console.WriteLine($"\nNext steps:");
         Console.WriteLine($"  1. Review imported YAML files in: {outputPath}");
         Console.WriteLine($"  2. Add to model definition to use in builds");
+    }
+
+    #endregion
+
+    #region Snowflake Subcommand
+
+    private static Command CreateSnowflakeSubcommand()
+    {
+        var configPathArgument = new Argument<string>(
+            "config-path",
+            "Path to snowflake.yaml config file (defines connection, "
+            + "tables to import, and type mappings)");
+
+        var outputPathArgument = new Argument<string>(
+            "output-path",
+            () => "./tables",
+            "Path where table YAML files will be created "
+            + "(defaults to ./tables)");
+
+        var envFileOption = new Option<string?>(
+            "--env-file",
+            "Path to .env file for credentials "
+            + "(default: auto-detect from project root)");
+
+        var dryRunOption = new Option<bool>(
+            "--dry-run",
+            "Preview changes without writing files");
+
+        var testConnectionOption = new Option<bool>(
+            "--test-connection",
+            "Test Snowflake connectivity without importing");
+
+        var pruneDeletedOption = new Option<bool>(
+            "--prune-deleted",
+            "Remove columns from YAML that no longer exist in Snowflake "
+            + "(default: keep them)");
+
+        var overwriteDescriptionsOption = new Option<bool>(
+            "--overwrite-descriptions",
+            "Overwrite manual YAML descriptions with Snowflake COMMENTs "
+            + "(default: preserve manual edits)");
+
+        var command = new Command("snowflake",
+            "Import table metadata from Snowflake INFORMATION_SCHEMA")
+        {
+            configPathArgument,
+            outputPathArgument,
+            envFileOption,
+            dryRunOption,
+            testConnectionOption,
+            pruneDeletedOption,
+            overwriteDescriptionsOption
+        };
+
+        command.SetHandler((configPath, outputPath, envFile,
+            dryRun, testConnection, pruneDeleted,
+            overwriteDescriptions) =>
+        {
+            try
+            {
+                // Load .env file
+                LoadEnvironmentFile(configPath, envFile);
+
+                if (testConnection)
+                {
+                    ExecuteSnowflakeConnectionTest(configPath);
+                }
+                else
+                {
+                    ExecuteSnowflakeImport(configPath, outputPath,
+                        dryRun, pruneDeleted, overwriteDescriptions);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(
+                    $"\n✗ Snowflake import failed: {ex.Message}");
+                Console.ResetColor();
+
+                if (ex.Message.Contains("SNOWFLAKE_") ||
+                    ex.Message.Contains("Environment variable"))
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Ensure your .env file contains:");
+                    Console.WriteLine(
+                        "  SNOWFLAKE_ACCOUNT=<your-account>");
+                    Console.WriteLine(
+                        "  SNOWFLAKE_USER=<your-username>");
+                    Console.WriteLine(
+                        "  SNOWFLAKE_PASSWORD=<your-password>");
+                    Console.WriteLine(
+                        "  SNOWFLAKE_WAREHOUSE=<your-warehouse>");
+                    Console.WriteLine(
+                        "  SNOWFLAKE_ROLE=<your-role> (optional)");
+                }
+
+                Environment.Exit(1);
+            }
+        }, configPathArgument, outputPathArgument, envFileOption,
+           dryRunOption, testConnectionOption, pruneDeletedOption,
+           overwriteDescriptionsOption);
+
+        return command;
+    }
+
+    /// <summary>
+    /// Locate and load the .env file. Search order:
+    /// 1. Explicit --env-file path
+    /// 2. Same directory as the config file
+    /// 3. Walk up parent directories from config file location
+    /// </summary>
+    private static void LoadEnvironmentFile(
+        string configPath, string? envFile)
+    {
+        string? envPath;
+
+        if (!string.IsNullOrEmpty(envFile))
+        {
+            envPath = envFile;
+            if (!File.Exists(envPath))
+            {
+                throw new FileNotFoundException(
+                    $".env file not found: {envPath}");
+            }
+        }
+        else
+        {
+            // Auto-detect: start from config file's directory and walk up
+            var configDir = Path.GetDirectoryName(
+                Path.GetFullPath(configPath)) ?? ".";
+            envPath = EnvResolver.FindEnvFile(configDir);
+        }
+
+        if (envPath != null)
+        {
+            Console.WriteLine($"Loading credentials from: {envPath}");
+            EnvResolver.LoadEnvFile(envPath);
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine(
+                "Warning: No .env file found. "
+                + "Using system environment variables only.");
+            Console.ResetColor();
+        }
+    }
+
+    private static void ExecuteSnowflakeConnectionTest(string configPath)
+    {
+        Console.WriteLine("Testing Snowflake connection...");
+        Console.WriteLine();
+
+        var serializer = new YamlSerializer();
+        var sourceConfig =
+            serializer.LoadFromFile<SourceTypeConfig>(configPath);
+
+        var reader = new SnowflakeSchemaReader();
+        var info = reader.TestConnection(sourceConfig);
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"✓ Connection successful");
+        Console.ResetColor();
+        Console.WriteLine($"  {info}");
+    }
+
+    private static void ExecuteSnowflakeImport(
+        string configPath,
+        string outputPath,
+        bool dryRun,
+        bool pruneDeleted,
+        bool overwriteDescriptions)
+    {
+        Console.WriteLine(
+            $"Importing from Snowflake via: {configPath}");
+        Console.WriteLine($"Output: {outputPath}");
+        if (dryRun)
+            Console.WriteLine(
+                "Mode: DRY RUN (no files will be written)");
+        Console.WriteLine();
+
+        // Load and validate config
+        var serializer = new YamlSerializer();
+
+        if (!File.Exists(configPath))
+        {
+            throw new FileNotFoundException(
+                $"Config file not found: {configPath}");
+        }
+
+        var sourceConfig =
+            serializer.LoadFromFile<SourceTypeConfig>(configPath);
+        ValidateSourceTypeConfig(sourceConfig, configPath);
+
+        if (sourceConfig.Import == null)
+        {
+            throw new InvalidOperationException(
+                $"Config file '{configPath}' is missing the 'import' "
+                + "section.\nAdd:\n  import:\n    database: YOUR_DB\n"
+                + "    schema: YOUR_SCHEMA\n    tables:\n"
+                + "      - TABLE1\n      - TABLE2");
+        }
+
+        var import = sourceConfig.Import;
+        Console.WriteLine(
+            $"Source: {import.Database}.{import.Schema}");
+        Console.WriteLine($"Tables: {(import.ImportAllTables
+            ? "all"
+            : string.Join(", ", import.Tables))}");
+        Console.WriteLine();
+
+        // Query Snowflake INFORMATION_SCHEMA
+        Console.WriteLine("Connecting to Snowflake...");
+        var snowflakeReader = new SnowflakeSchemaReader();
+        var rows = snowflakeReader.ReadSchema(sourceConfig);
+
+        // Group by table (reuse existing CsvSchemaReader logic)
+        var csvReader = new CsvSchemaReader();
+        var tableGroups = csvReader.GroupByTable(rows);
+
+        Console.WriteLine(
+            $"Retrieved {tableGroups.Count} table(s) "
+            + $"with {rows.Count} column(s)");
+        Console.WriteLine();
+
+        // Create output directory
+        if (!dryRun)
+        {
+            Directory.CreateDirectory(outputPath);
+        }
+
+        // Build scaffold config with source metadata
+        var scaffoldConfig = ScaffoldConfig.CreateDefault();
+        if (sourceConfig.Connector != null)
+        {
+            scaffoldConfig.Source = new SourceConfig
+            {
+                Type = sourceConfig.SourceType,
+                Connection = sourceConfig.Connector.Connection
+            };
+        }
+
+        // Initialize table generator with source type config
+        // (for dual type mapping)
+        var generator = new TableGenerator(scaffoldConfig, sourceConfig);
+
+        // Configure smart merge
+        var mergeOptions = new MergeOptions
+        {
+            DryRun = dryRun,
+            PruneDeleted = pruneDeleted,
+            UpdateTypes = true,
+            OverwriteDescriptions = overwriteDescriptions
+        };
+        var merger = new SmartMerger(mergeOptions);
+
+        // Process each table
+        Console.WriteLine(dryRun
+            ? "Preview of changes:"
+            : "Importing tables:");
+
+        var importedCount = 0;
+
+        foreach (var (tableName, tableRows) in tableGroups)
+        {
+            // Generate table definition via existing pipeline
+            var generated =
+                generator.GenerateTable(tableName, tableRows);
+            var fileName =
+                FileNameSanitizer.SanitizeToLower(generated.Name)
+                + ".yaml";
+            var filePath = Path.Combine(outputPath, fileName);
+
+            if (dryRun)
+            {
+                merger.PrintMergePreview(generated, filePath);
+            }
+            else
+            {
+                // Smart merge with existing YAML
+                // (preserves manual edits)
+                var merged = merger.MergeTable(generated, filePath);
+
+                // Write file
+                serializer.SaveToFile(merged, filePath);
+                Console.WriteLine(
+                    $"  ✓ {fileName} ({merged.Columns.Count} columns)");
+            }
+
+            importedCount++;
+        }
+
+        // Summary
+        Console.WriteLine();
+        if (dryRun)
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine(
+                $"✓ Dry run complete - {importedCount} table(s) "
+                + "would be imported");
+            Console.ResetColor();
+            Console.WriteLine(
+                "  Run without --dry-run to apply changes.");
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"✓ Import completed successfully");
+            Console.ResetColor();
+            Console.WriteLine(
+                $"  Imported {importedCount} table definition(s) "
+                + "from Snowflake");
+            Console.WriteLine($"\nNext steps:");
+            Console.WriteLine(
+                $"  1. Review imported YAML files in: {outputPath}");
+            Console.WriteLine(
+                "  2. Add to model definition to use in builds");
+        }
     }
 
     #endregion
