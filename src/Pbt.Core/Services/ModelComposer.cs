@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AnalysisServices.Tabular;
 using Pbt.Core.Models;
 
@@ -8,6 +9,7 @@ namespace Pbt.Core.Services;
 /// </summary>
 public sealed class ModelComposer
 {
+    private static readonly Regex EnvVarPattern = new(@"\$\{(\w+)\}", RegexOptions.Compiled);
     private readonly TableRegistry _tableRegistry;
     private LineageManifestService? _lineageService;
     private ModelDefinition? _modelDef;
@@ -1088,7 +1090,7 @@ public sealed class ModelComposer
     /// </summary>
     private static string SubstituteEnvironmentVariables(string value)
     {
-        return System.Text.RegularExpressions.Regex.Replace(value, @"\$\{(\w+)\}", match =>
+        return EnvVarPattern.Replace(value, match =>
         {
             var envVarName = match.Groups[1].Value;
             var envValue = Environment.GetEnvironmentVariable(envVarName);
