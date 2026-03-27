@@ -34,7 +34,7 @@ public sealed class LineageManifestService
             {
                 _manifest = _serializer.LoadFromFile<LineageManifest>(manifestPath);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 throw new InvalidOperationException($"Failed to load lineage manifest from {manifestPath}", ex);
             }

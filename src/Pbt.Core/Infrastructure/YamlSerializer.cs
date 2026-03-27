@@ -48,7 +48,11 @@ public sealed class YamlSerializer
             var yaml = File.ReadAllText(filePath);
             return _deserializer.Deserialize<T>(yaml);
         }
-        catch (Exception ex)
+        catch (IOException ex)
+        {
+            throw new InvalidOperationException($"Failed to read YAML file: {filePath}", ex);
+        }
+        catch (YamlException ex)
         {
             throw new InvalidOperationException($"Failed to parse YAML file: {filePath}", ex);
         }
@@ -63,7 +67,7 @@ public sealed class YamlSerializer
         {
             return _deserializer.Deserialize<T>(yaml);
         }
-        catch (Exception ex)
+        catch (YamlException ex)
         {
             throw new InvalidOperationException("Failed to deserialize YAML", ex);
         }
@@ -87,7 +91,11 @@ public sealed class YamlSerializer
 
             File.WriteAllText(filePath, yaml);
         }
-        catch (Exception ex)
+        catch (YamlException ex)
+        {
+            throw new InvalidOperationException($"Failed to save YAML file: {filePath}", ex);
+        }
+        catch (IOException ex)
         {
             throw new InvalidOperationException($"Failed to save YAML file: {filePath}", ex);
         }
@@ -102,7 +110,7 @@ public sealed class YamlSerializer
         {
             return _serializer.Serialize(obj);
         }
-        catch (Exception ex)
+        catch (YamlException ex)
         {
             throw new InvalidOperationException("Failed to serialize to YAML", ex);
         }

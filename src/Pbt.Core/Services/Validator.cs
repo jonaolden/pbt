@@ -77,7 +77,12 @@ public sealed class Validator
                 ValidateTableStructure(table, result);
             }
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            result.AddError($"Failed to load tables: {ex.Message}");
+            return result;
+        }
+        catch (DirectoryNotFoundException ex)
         {
             result.AddError($"Failed to load tables: {ex.Message}");
             return result;
@@ -88,7 +93,7 @@ public sealed class Validator
         {
             ValidateModelReferences(model, registry, modelFilePath, result);
         }
-        catch (Exception ex)
+        catch (KeyNotFoundException ex)
         {
             result.AddError($"Failed to validate model: {ex.Message}", modelFilePath);
         }
@@ -138,7 +143,7 @@ public sealed class Validator
             {
                 model = _serializer.LoadFromFile<ModelDefinition>(modelFile);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 result.AddError($"Failed to load model file: {ex.Message}", modelFile);
                 continue;
@@ -512,7 +517,7 @@ public sealed class Validator
             // If we get here without exceptions, TOM model is structurally valid
             return result;
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             result.AddError($"TOM model validation failed: {ex.Message}", modelName);
             return result;
