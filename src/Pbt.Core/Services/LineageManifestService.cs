@@ -338,13 +338,13 @@ public sealed class LineageManifestService
     }
 
     /// <summary>
-    /// Generate deterministic lineage tag using MD5 hash
+    /// Generate deterministic lineage tag using SHA256 hash
     /// </summary>
     private string GenerateDeterministicTag(string tableName, string objectName, string objectType)
     {
         var seed = $"{tableName}_{objectName}_{objectType}";
-        var hash = MD5.HashData(Encoding.UTF8.GetBytes(seed));
-        return new Guid(hash).ToString();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
+        return new Guid(hash.AsSpan(0, 16)).ToString();
     }
 
     /// <summary>
