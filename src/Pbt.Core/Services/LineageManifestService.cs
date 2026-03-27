@@ -69,7 +69,10 @@ public sealed class LineageManifestService
         // Update timestamp
         _manifest.GeneratedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
-        _serializer.SaveToFile(_manifest, manifestPath);
+        // Atomic write: write to temp file first, then move to avoid corruption on crash
+        var tempPath = manifestPath + ".tmp";
+        _serializer.SaveToFile(_manifest, tempPath);
+        File.Move(tempPath, manifestPath, overwrite: true);
     }
 
     /// <summary>
