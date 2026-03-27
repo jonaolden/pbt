@@ -141,6 +141,20 @@ public class ColumnNamingConfig
     /// Table-specific naming groups (checked in order, first match wins)
     /// </summary>
     public List<ColumnNamingGroup> Groups { get; set; } = new();
+
+    /// <summary>
+    /// Regex patterns for columns to exclude from import.
+    /// Matched against the source column name. Exclude is evaluated before include.
+    /// Example: ["^DW_", "^ETL_", "_HASH$"]
+    /// </summary>
+    public List<string> ExcludePatterns { get; set; } = new();
+
+    /// <summary>
+    /// Regex patterns for columns to include in import.
+    /// When non-empty, only columns matching at least one pattern are imported.
+    /// Matched against the source column name. Evaluated after exclude.
+    /// </summary>
+    public List<string> IncludePatterns { get; set; } = new();
 }
 
 /// <summary>
@@ -178,6 +192,16 @@ public class ColumnNamingGroup
     /// Column naming rules for this group
     /// </summary>
     public List<ColumnNamingRule> Rules { get; set; } = new();
+
+    /// <summary>
+    /// Regex patterns for columns to exclude in this group (overrides default)
+    /// </summary>
+    public List<string> ExcludePatterns { get; set; } = new();
+
+    /// <summary>
+    /// Regex patterns for columns to include in this group (overrides default)
+    /// </summary>
+    public List<string> IncludePatterns { get; set; } = new();
 }
 
 /// <summary>

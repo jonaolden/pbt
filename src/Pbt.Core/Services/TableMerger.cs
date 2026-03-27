@@ -68,6 +68,9 @@ public sealed class TableMerger
             IsHidden = existing.IsHidden,
             LineageTag = existing.LineageTag,
 
+            // Preserve excluded columns list
+            ExcludedColumns = existing.ExcludedColumns,
+
             Columns = new List<ColumnDefinition>()
         };
 
@@ -82,12 +85,21 @@ public sealed class TableMerger
             .Where(c => string.IsNullOrEmpty(c.SourceColumn))
             .ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
 
+        // Build excluded columns set from existing table definition
+        var excludedColumns = new HashSet<string>(
+            existing.ExcludedColumns ?? Enumerable.Empty<string>(),
+            StringComparer.OrdinalIgnoreCase);
+
         // Track which existing columns have been matched to avoid duplicates
         var matchedExistingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Merge columns
+        // Merge columns (skip excluded)
         foreach (var genColumn in generated.Columns)
         {
+            // Skip columns in the excluded list
+            if (!string.IsNullOrEmpty(genColumn.SourceColumn) && excludedColumns.Contains(genColumn.SourceColumn))
+                continue;
+
             ColumnDefinition? existingColumn = null;
 
             // Match by SourceColumn (preferred - handles renamed columns)

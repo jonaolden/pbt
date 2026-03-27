@@ -138,6 +138,9 @@ public sealed class ModelComposer
         // 5. Add shared expressions / Power Query parameters (from model and project)
         AddSharedExpressions(modelDef, model);
 
+        // 5b. Add RangeStart/RangeEnd expressions for tables with incremental refresh
+        AddIncrementalRefreshExpressions(model);
+
         // 6. Add calculation groups
         if (modelDef.CalculationGroups != null)
         {
@@ -280,6 +283,12 @@ public sealed class ModelComposer
             {
                 table.Annotations.Add(new Annotation { Name = key, Value = value });
             }
+        }
+
+        // Configure incremental refresh policy
+        if (tableDef.IncrementalRefresh != null)
+        {
+            ApplyIncrementalRefreshPolicy(table, tableDef.IncrementalRefresh);
         }
 
         // Generate lineage tag
@@ -773,6 +782,83 @@ public sealed class ModelComposer
 
         // Fallback to random GUID if no lineage service
         return Guid.NewGuid().ToString();
+    }
+
+    /// <summary>
+    /// Add RangeStart/RangeEnd named expressions if any table uses incremental refresh.
+    /// These are Power Query parameters that Power BI uses for partition boundaries.
+    /// </summary>
+    private void AddIncrementalRefreshExpressions(Model model)
+    {
+        var hasIncrementalRefresh = _tableRegistry.GetAllTables()
+            .Any(t => t.IncrementalRefresh != null);
+
+        if (!hasIncrementalRefresh) return;
+
+        // Only add if not already present (model-level expressions take precedence)
+        if (model.Expressions.Find("RangeStart") == null)
+        {
+            model.Expressions.Add(new NamedExpression
+            {
+                Name = "RangeStart",
+                Kind = ExpressionKind.M,
+                Expression = "#datetime(2020, 1, 1, 0, 0, 0) meta [IsParameterQuery=true, Type=\"DateTime\", IsParameterQueryRequired=true]",
+                Description = "Incremental refresh range start (managed by Power BI Service)"
+            });
+        }
+
+        if (model.Expressions.Find("RangeEnd") == null)
+        {
+            model.Expressions.Add(new NamedExpression
+            {
+                Name = "RangeEnd",
+                Kind = ExpressionKind.M,
+                Expression = "#datetime(2024, 12, 31, 0, 0, 0) meta [IsParameterQuery=true, Type=\"DateTime\", IsParameterQueryRequired=true]",
+                Description = "Incremental refresh range end (managed by Power BI Service)"
+            });
+        }
+    }
+
+    /// <summary>
+    /// Apply incremental refresh policy to a TOM table.
+    /// Sets the RefreshPolicy with rolling window configuration.
+    /// </summary>
+    private static void ApplyIncrementalRefreshPolicy(Table table, IncrementalRefreshDefinition config)
+    {
+        var granularity = config.Granularity.ToLowerInvariant() switch
+        {
+            "day" => RefreshGranularityType.Day,
+            "month" => RefreshGranularityType.Month,
+            "quarter" => RefreshGranularityType.Quarter,
+            "year" => RefreshGranularityType.Year,
+            _ => RefreshGranularityType.Day
+        };
+
+        var policy = new BasicRefreshPolicy
+        {
+            IncrementalPeriodsOffset = -config.IncrementalPeriodOffset,
+            IncrementalPeriods = config.IncrementalPeriods,
+            IncrementalGranularity = granularity,
+            RollingWindowPeriods = config.IncrementalPeriodOffset,
+            RollingWindowGranularity = granularity,
+            SourceExpression = table.Partitions.Count > 0 && table.Partitions[0].Source is MPartitionSource src
+                ? src.Expression
+                : null
+        };
+
+        if (!string.IsNullOrWhiteSpace(config.PollingExpression))
+        {
+            policy.PollingExpression = config.PollingExpression;
+        }
+
+        table.RefreshPolicy = policy;
+
+        // Add annotation to mark as incremental refresh enabled
+        table.Annotations.Add(new Annotation
+        {
+            Name = "PBI_IncrementalRefresh",
+            Value = $"{{\"dateColumn\":\"{config.DateColumn}\",\"granularity\":\"{config.Granularity}\"}}"
+        });
     }
 
     /// <summary>
