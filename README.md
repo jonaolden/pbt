@@ -2,19 +2,6 @@
 
 A semantic model composition tool for Power BI that enables version-controlled, reusable table definitions and model composition using YAML.
 
-## Features
-
-- **Reusable Table Definitions**: Define tables once in YAML, reference them in multiple models
-- **Model Composition**: Compose Power BI models by referencing tables and defining relationships/measures
-- **Advanced Model Features**: Calculation groups, perspectives, roles with RLS, field parameters
-- **Lineage Tag Management**: Deterministic lineage tag generation to prevent breaking existing Power BI reports
-- **Validation**: Comprehensive validation of project configuration before building
-- **TMDL & PBIP Output**: Generates TMDL or full PBIP project structure for Power BI deployment
-- **Pre-Build Hooks**: Run arbitrary scripts before building via `--pre-hook`
-- **Environment Support**: Named environments for expression overrides across dev/staging/prod
-- **Import/Export**: Import existing TMDL models or CSV schemas to YAML format
-- **Diff & CI**: Compare project states and detect breaking changes in CI pipelines
-
 ## Installation
 
 ```bash
@@ -23,26 +10,12 @@ dotnet tool install --global Pbt
 
 Requires .NET 10.0 SDK or later. See [docs/installation.md](docs/installation.md) for alternative install methods and build-from-source instructions.
 
-## Global Options
-
-All commands support:
-
-| Option | Description |
-|---|---|
-| `--output-format`, `-of` | Output format: `text` (default) or `json` |
-| `--ci` | CI mode: no color, non-interactive, strict exit codes. Auto-detected from `CI=true` env var |
-
 ## Quick Start
 
 ```bash
-# Initialize a project with example files
 pbt init my_project --examples
 cd my_project
-
-# Validate definitions
 pbt validate .
-
-# Build PBIP output
 pbt build .
 ```
 
@@ -53,16 +26,21 @@ Output is written to `my_project/target/`.
 ```
 my_project/
 ├── tables/                  # Reusable table definitions (YAML)
-│   ├── dim_product.yaml
-│   └── fact_sales.yaml
 ├── models/                  # Model compositions (YAML)
-│   └── sales_model.yaml
 ├── environments/            # Named environments (optional)
-│   └── dev.env.yml
 ├── scripts/                 # Pre-build hook scripts (optional)
 ├── .pbt/                    # Tool metadata & lineage manifest
 └── target/                  # Generated output (created on build)
 ```
+
+## Global Options
+
+All commands support:
+
+| Option | Description |
+|---|---|
+| `--output-format`, `-of` | Output format: `text` (default) or `json` |
+| `--ci` | CI mode: no color, non-interactive, strict exit codes. Auto-detected from `CI=true` env var |
 
 ## Commands
 
@@ -72,7 +50,7 @@ my_project/
 pbt init [path] [--examples]
 ```
 
-Creates a new pbt project. Use `--examples` to include sample table and model files.
+Creates a new pbt project with the standard directory structure. Use `--examples` to include sample table and model files.
 
 ### build
 
@@ -95,20 +73,11 @@ Builds a full PBIP project from YAML definitions. Pass a project directory or a 
 **Subcommand:** `pbt build model` builds TMDL-only output (no PBIP wrapper). Same options apply.
 
 ```bash
-# Build all models as PBIP
-pbt build my_project
-
-# Build a single model file
-pbt build models/sales_model.yaml
-
-# Build TMDL-only with environment overrides
-pbt build model my_project --env dev
-
-# Dry run
-pbt build my_project --dry-run
-
-# Pre-build hook
-pbt build my_project --pre-hook "python3 ./scripts/normalize_columns.py"
+pbt build my_project                        # Build all models as PBIP
+pbt build models/sales_model.yaml           # Build a single model file
+pbt build model my_project --env dev        # TMDL-only with environment
+pbt build my_project --dry-run              # Validate without writing
+pbt build my_project --pre-hook "./scripts/normalize_columns.sh"
 ```
 
 ### validate
@@ -135,43 +104,115 @@ Lists all tables, models, and lineage information. Use `--details` for column co
 pbt import model <tmdl-path> [output-path] [options]
 ```
 
-Imports a complete TMDL model into YAML project structure.
+Imports a complete TMDL model into a YAML project structure (tables, model definition, `.gitignore`).
 
 | Option | Description |
 |---|---|
 | `--include-lineage-tags` | Preserve original lineage tags from TMDL |
-| `--overwrite` | Overwrite existing files |
+| `--overwrite` | Overwrite existing files in output directory |
 | `--unsupported-objects` | Handle unsupported constructs: `warn` (default), `error`, or `skip` |
 | `--show-changes` | Show diff of changes before applying |
 | `--auto-merge` | Automatically merge changes without confirmation |
 
+Unsupported constructs detected: calculation groups, perspectives, roles, translations/cultures, KPIs.
+
 ### import table
 
 ```bash
-pbt import table <path> [output-path] [--source-config <config>]
+pbt import table <path> [output-path] [--source-config <config>] [--include-lineage-tags]
 ```
 
-Imports table definitions from CSV schema export or TMDL. Auto-detects source type by file extension.
+Imports table definitions from a **CSV schema export** or **TMDL model**. Auto-detects source type by file extension.
 
-- **CSV**: Requires `--source-config` pointing to a connector config file (supports `snowflake`, `sqlserver`)
-- **TMDL**: Optionally pass `--include-lineage-tags`
+Both modes use **smart merge** when a table YAML already exists: new columns are added, types are updated from source, and manual edits (descriptions, hierarchies, formatting) are preserved.
 
-Both modes use **smart merge**: new columns are added, types are updated from source, and manual edits (descriptions, hierarchies, formatting) are preserved.
+#### From TMDL
+
+```bash
+pbt import table /path/to/model.tmdl ./tables
+pbt import table /path/to/model.tmdl ./tables --include-lineage-tags
+```
+
+Extracts individual table definitions from a TMDL model.
+
+#### From CSV (Snowflake, SQL Server)
+
+```bash
+pbt import table schema_export.csv --source-config snowflake_config.yaml
+pbt import table schema_export.csv --source-config config.yaml ./custom-tables
+```
+
+Imports tables from a CSV schema export (e.g., Snowflake `INFORMATION_SCHEMA` query). Requires `--source-config` pointing to a connector config file.
+
+**CSV columns** (matches `INFORMATION_SCHEMA` output):
+
+| Column | Required | Description |
+|---|---|---|
+| `table_name` | yes | Table name |
+| `column_name` | yes | Column name |
+| `data_type` | yes | Database-native type (e.g., `VARCHAR`, `NUMBER`, `TIMESTAMP_NTZ`) |
+| `table_catalog` | no | Database name |
+| `table_schema` | no | Schema name |
+| `ordinal_position` | no | Column ordering |
+| `is_nullable` | no | Nullable flag |
+| `column_default` | no | Default value |
+| `column_comment` | no | Column description |
+| `table_comment` | no | Table description |
+
+**Source config file** (`snowflake_config.yaml`):
+
+```yaml
+source_type: snowflake          # snowflake | sqlserver
+
+connector:
+  name: SnowflakeSource         # Expression name in TMDL
+  connection: myaccount.snowflakecomputing.com
+  warehouse: ANALYTICS_WH       # Required for Snowflake
+
+datatypes:
+  mappings:
+    - database_type: VARCHAR
+      m_type: Text.Type
+      tmdl_type: string
+    - database_type: NUMBER
+      m_type: Int64.Type
+      tmdl_type: int64
+    - database_type: TIMESTAMP_NTZ
+      m_type: DateTime.Type
+      tmdl_type: dateTime
+  regex_overrides:
+    - pattern: ["_ID$", "^DW_"]
+      m_type: Int64.Type
+      tmdl_type: int64
+
+column_naming:
+  conversion: pascalcase        # pascalcase | camelcase | snake_case | none
+  preserve_patterns: ["^DW_"]   # Skip conversion for matching columns
+  rules:
+    - pattern: "^DW_"
+      is_hidden: true
+      description: "System column"
+  groups:                        # Table-specific overrides (first match wins)
+    - table_pattern: "^FACT_"
+      table_is_hidden: false
+      table_name_conversion: pascalcase
+      conversion: pascalcase
+    - table_pattern: "^STG_"
+      table_is_hidden: true
+      table_name_conversion: none
+```
 
 ### lineage
 
-Manage the lineage tag manifest (`.pbt/lineage.yaml`).
+Manage the lineage tag manifest (`.pbt/lineage.yaml`). Lineage tags are deterministic GUIDs that bind Power BI reports to model objects — rebuilding a model preserves tags so connected reports don't break.
 
 ```bash
-# Show manifest summary (add --details for all tags)
-pbt lineage show [project-path] [--details]
-
-# Remove tags for deleted objects (add --dry-run to preview)
-pbt lineage clean [project-path] [--dry-run]
-
-# Delete manifest entirely (requires --confirm; breaks existing reports)
-pbt lineage reset [project-path] --confirm
+pbt lineage show [project-path] [--details]       # Show manifest
+pbt lineage clean [project-path] [--dry-run]       # Remove orphaned tags
+pbt lineage reset [project-path] --confirm         # Delete manifest (breaks reports)
 ```
+
+Recommended: commit `.pbt/lineage.yaml` to git for team consistency.
 
 ### diff
 
@@ -184,7 +225,7 @@ Compares two project states and classifies each change as breaking or non-breaki
 **Breaking**: table/column/measure/relationship/model removed, column type changed.
 **Non-breaking**: additions, description/format/expression changes.
 
-Use `--breaking` in CI to fail on breaking changes.
+Use `--breaking` in CI to return a non-zero exit code on breaking changes.
 
 ## YAML Reference
 
@@ -247,6 +288,41 @@ measures:
     expression: SUM(Sales[Amount])
     format_string: "$#,##0.00"
     display_folder: Sales Metrics
+
+calculation_groups:
+  - name: Time Intelligence
+    precedence: 10
+    columns:
+      - name: Time Calculation
+        type: String
+        source_column: Name
+    calculation_items:
+      - name: Current
+        expression: SELECTEDMEASURE()
+        ordinal: 0
+      - name: YTD
+        expression: CALCULATE(SELECTEDMEASURE(), DATESYTD('Date'[Date]))
+        ordinal: 1
+
+perspectives:
+  - name: Sales Overview
+    tables: [Sales, Customers]
+    measures: [Total Sales]
+    exclude_columns: [Customers.InternalID]
+
+roles:
+  - name: RegionManager
+    model_permission: Read
+    table_permissions:
+      - table: Customers
+        filter_expression: '[Country] = USERPRINCIPALNAME()'
+
+field_parameters:
+  - name: Sales Metric
+    values:
+      - name: Total Sales
+        expression: "NAMEOF('Sales'[Total Sales])"
+        ordinal: 0
 ```
 
 ### Environments (`environments/<name>.env.yml`)
@@ -263,80 +339,6 @@ expressions:
 ```bash
 pbt build my_project --env dev
 ```
-
-### Calculation Groups
-
-```yaml
-calculation_groups:
-  - name: Time Intelligence
-    precedence: 10
-    columns:
-      - name: Time Calculation
-        type: String
-        source_column: Name
-    calculation_items:
-      - name: Current
-        expression: SELECTEDMEASURE()
-        ordinal: 0
-      - name: YTD
-        expression: CALCULATE(SELECTEDMEASURE(), DATESYTD('Date'[Date]))
-        ordinal: 1
-```
-
-### Perspectives
-
-```yaml
-perspectives:
-  - name: Sales Overview
-    tables:
-      - Sales
-      - Customers
-    measures:
-      - Total Sales
-    exclude_columns:
-      - Customers.InternalID
-```
-
-### Roles (RLS)
-
-```yaml
-roles:
-  - name: RegionManager
-    model_permission: Read
-    table_permissions:
-      - table: Customers
-        filter_expression: '[Country] = USERPRINCIPALNAME()'
-```
-
-### Field Parameters
-
-```yaml
-field_parameters:
-  - name: Sales Metric
-    values:
-      - name: Total Sales
-        expression: "NAMEOF('Sales'[Total Sales])"
-        ordinal: 0
-```
-
-## Lineage Tags
-
-pbt generates **deterministic lineage tags** so that rebuilding models doesn't break connected Power BI reports. Tags are stored in `.pbt/lineage.yaml`.
-
-- **First build**: generates tags based on object names
-- **Subsequent builds**: reuses existing tags
-- **New objects**: get new tags; renamed objects get new tags
-- **Recommended**: commit `lineage.yaml` to git for team consistency
-
-## Pre-Build Hooks
-
-Run arbitrary scripts before building. The hook runs in the project directory; a non-zero exit aborts the build.
-
-```bash
-pbt build my_project --pre-hook "./scripts/normalize_columns.sh"
-```
-
-Use any language (bash, Python, PowerShell, Node.js) — no DSL to learn.
 
 ## Development
 
