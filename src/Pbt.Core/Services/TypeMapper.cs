@@ -8,6 +8,7 @@ namespace Pbt.Core.Services;
 /// </summary>
 public sealed class TypeMapper
 {
+    private static readonly Regex BaseTypeExtractor = new(@"^([A-Za-z_]+)", RegexOptions.Compiled);
     private readonly ScaffoldConfig _config;
 
     public TypeMapper(ScaffoldConfig config)
@@ -74,7 +75,7 @@ public sealed class TypeMapper
     /// </summary>
     private string ExtractBaseType(string databaseType)
     {
-        var match = Regex.Match(databaseType, @"^([A-Za-z_]+)");
+        var match = BaseTypeExtractor.Match(databaseType);
         return match.Success ? match.Groups[1].Value : databaseType;
     }
 }

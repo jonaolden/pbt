@@ -307,6 +307,11 @@ public class ExampleProjectFullPipelineTests
         var tempProject = Path.Combine(Path.GetTempPath(), $"pbt_lineage_stability_{Guid.NewGuid()}");
         CopyDirectory(exampleProjectPath, tempProject);
 
+        // Remove existing lineage manifest so first build generates fresh tags
+        var existingLineage = Path.Combine(tempProject, ".pbt", "lineage.yaml");
+        if (File.Exists(existingLineage))
+            File.Delete(existingLineage);
+
         try
         {
             var registry = new TableRegistry(_serializer);

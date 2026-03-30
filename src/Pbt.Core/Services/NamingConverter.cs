@@ -10,6 +10,7 @@ namespace Pbt.Core.Services;
 /// </summary>
 public sealed class NamingConverter
 {
+    private static readonly Regex PascalCaseSplitter = new("(?<!^)([A-Z])", RegexOptions.Compiled);
     private readonly ScaffoldConfig _config;
 
     public NamingConverter(ScaffoldConfig config)
@@ -137,7 +138,7 @@ public sealed class NamingConverter
             return input;
 
         // Insert underscore before uppercase letters (except first)
-        var result = Regex.Replace(input, "(?<!^)([A-Z])", "_$1");
+        var result = PascalCaseSplitter.Replace(input, "_$1");
 
         return result.ToLower(CultureInfo.InvariantCulture);
     }

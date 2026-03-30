@@ -271,17 +271,33 @@ public static class BuildCommand
             var hookProcess = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh",
-                Arguments = OperatingSystem.IsWindows() ? $"/c {preHook}" : $"-c \"{preHook}\"",
+                Arguments = OperatingSystem.IsWindows() ? $"/c {preHook}" : $"-c {preHook}",
                 WorkingDirectory = projectPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             });
-            hookProcess?.WaitForExit();
-            if (hookProcess?.ExitCode != 0)
+
+            if (hookProcess == null)
             {
-                var stderr = hookProcess?.StandardError.ReadToEnd();
-                throw new InvalidOperationException($"Pre-hook failed with exit code {hookProcess?.ExitCode}: {stderr}");
+                throw new InvalidOperationException("Failed to start pre-hook process");
+            }
+
+            // Read streams before WaitForExit to avoid deadlock with redirected output
+            var stdoutTask = hookProcess.StandardOutput.ReadToEndAsync();
+            var stderrTask = hookProcess.StandardError.ReadToEndAsync();
+
+            const int hookTimeoutMs = 60_000; // 60 second timeout
+            if (!hookProcess.WaitForExit(hookTimeoutMs))
+            {
+                hookProcess.Kill(entireProcessTree: true);
+                throw new InvalidOperationException($"Pre-hook timed out after {hookTimeoutMs / 1000}s and was terminated");
+            }
+
+            var stderr = stderrTask.Result;
+            if (hookProcess.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"Pre-hook failed with exit code {hookProcess.ExitCode}: {stderr}");
             }
             Console.WriteLine("Pre-hook completed.");
             Console.WriteLine();
@@ -564,10 +580,14 @@ public static class BuildCommand
                     connectorNames.Add(sourceConfig.Connector.Name);
                 }
             }
-            catch (Exception)
+            catch (YamlDotNet.Core.YamlException)
             {
                 // Skip files that cannot be parsed as SourceTypeConfig —
                 // the *_config.yaml glob may match unrelated config files.
+            }
+            catch (IOException)
+            {
+                // Skip unreadable config files
             }
         }
 

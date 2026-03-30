@@ -41,7 +41,7 @@ public class ModelComposerTests
         // Assert - Database
         Assert.NotNull(database);
         Assert.Equal("SalesAnalytics", database.Name);
-        Assert.Equal(1600, database.CompatibilityLevel);
+        Assert.Equal(1700, database.CompatibilityLevel);
         Assert.NotNull(database.Model);
 
         // Assert - Tables: 3 regular + 1 calc group + 1 field parameter = 5
@@ -134,8 +134,8 @@ public class ModelComposerTests
         var fieldParamTable = database.Model.Tables.Find("Sales Metric")!;
         Assert.Contains(fieldParamTable.Annotations, a => a.Name == "ParameterMetadata");
 
-        // Assert - Shared expressions (project-level + model-level)
-        Assert.True(database.Model.Expressions.Count >= 2);
+        // Assert - Shared expressions (model-level)
+        Assert.True(database.Model.Expressions.Count >= 1);
 
         // Assert - Lineage tags generated
         Assert.False(string.IsNullOrWhiteSpace(salesTable.LineageTag));

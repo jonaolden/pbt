@@ -70,7 +70,7 @@ public sealed class TableRegistry
                     }
                     // Note: We silently skip lower priority duplicates (this is expected behavior)
                 }
-                catch (Exception ex)
+                catch (InvalidOperationException ex)
                 {
                     throw new InvalidOperationException($"Failed to load table from {file}: {ex.Message}", ex);
                 }

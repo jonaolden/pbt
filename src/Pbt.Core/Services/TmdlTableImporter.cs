@@ -1,4 +1,5 @@
 using Microsoft.AnalysisServices.Tabular;
+using Microsoft.AnalysisServices.Tabular.Tmdl;
 using Pbt.Core.Infrastructure;
 using Pbt.Core.Models;
 
@@ -79,7 +80,13 @@ public sealed class TmdlTableImporter
         {
             database = TmdlSerializer.DeserializeDatabaseFromFolder(directoryPath);
         }
-        catch (Exception ex)
+        catch (TmdlFormatException ex)
+        {
+            throw new InvalidOperationException(
+                $"Failed to deserialize TMDL model from: {directoryPath}\n\n" +
+                $"Error: {ex.Message}", ex);
+        }
+        catch (TmdlSerializationException ex)
         {
             throw new InvalidOperationException(
                 $"Failed to deserialize TMDL model from: {directoryPath}\n\n" +
@@ -131,7 +138,7 @@ public sealed class TmdlTableImporter
                     tables.Add(tableDef);
                 }
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 failedTables.Add((Path.GetFileName(tmdlFile), ex.Message));
             }
@@ -219,7 +226,12 @@ public sealed class TmdlTableImporter
             {
                 database = TmdlSerializer.DeserializeDatabaseFromFolder(tempDir);
             }
-            catch (Exception ex)
+            catch (TmdlFormatException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to deserialize table from {Path.GetFileName(tmdlFilePath)}: {ex.Message}", ex);
+            }
+            catch (TmdlSerializationException ex)
             {
                 throw new InvalidOperationException(
                     $"Failed to deserialize table from {Path.GetFileName(tmdlFilePath)}: {ex.Message}", ex);
@@ -243,7 +255,7 @@ public sealed class TmdlTableImporter
                 {
                     Directory.Delete(tempDir, recursive: true);
                 }
-                catch (Exception ex)
+                catch (IOException ex)
                 {
                     Console.Error.WriteLine($"Warning: Failed to clean up temp directory '{tempDir}': {ex.Message}");
                 }

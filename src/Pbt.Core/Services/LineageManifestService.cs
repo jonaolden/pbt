@@ -11,13 +11,15 @@ namespace Pbt.Core.Services;
 public sealed class LineageManifestService
 {
     private readonly YamlSerializer _serializer;
+    private readonly TimeProvider _timeProvider;
     private LineageManifest _manifest;
     private readonly HashSet<string> _newTags = new();
     private readonly List<string> _collisionWarnings = new();
 
-    public LineageManifestService(YamlSerializer serializer)
+    public LineageManifestService(YamlSerializer serializer, TimeProvider? timeProvider = null)
     {
         _serializer = serializer;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _manifest = new LineageManifest();
     }
 
@@ -34,7 +36,7 @@ public sealed class LineageManifestService
             {
                 _manifest = _serializer.LoadFromFile<LineageManifest>(manifestPath);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 throw new InvalidOperationException($"Failed to load lineage manifest from {manifestPath}", ex);
             }
@@ -45,7 +47,7 @@ public sealed class LineageManifestService
             _manifest = new LineageManifest
             {
                 Version = 1,
-                GeneratedAt = DateTime.UtcNow
+                GeneratedAt = _timeProvider.GetUtcNow().UtcDateTime
             };
         }
     }
@@ -65,9 +67,12 @@ public sealed class LineageManifestService
         }
 
         // Update timestamp
-        _manifest.GeneratedAt = DateTime.UtcNow;
+        _manifest.GeneratedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
-        _serializer.SaveToFile(_manifest, manifestPath);
+        // Atomic write: write to temp file first, then move to avoid corruption on crash
+        var tempPath = manifestPath + ".tmp";
+        _serializer.SaveToFile(_manifest, tempPath);
+        File.Move(tempPath, manifestPath, overwrite: true);
     }
 
     /// <summary>
@@ -196,7 +201,7 @@ public sealed class LineageManifestService
         _manifest = new LineageManifest
         {
             Version = 1,
-            GeneratedAt = DateTime.UtcNow
+            GeneratedAt = _timeProvider.GetUtcNow().UtcDateTime
         };
         _newTags.Clear();
     }
@@ -336,13 +341,13 @@ public sealed class LineageManifestService
     }
 
     /// <summary>
-    /// Generate deterministic lineage tag using MD5 hash
+    /// Generate deterministic lineage tag using SHA256 hash
     /// </summary>
     private string GenerateDeterministicTag(string tableName, string objectName, string objectType)
     {
         var seed = $"{tableName}_{objectName}_{objectType}";
-        var hash = MD5.HashData(Encoding.UTF8.GetBytes(seed));
-        return new Guid(hash).ToString();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
+        return new Guid(hash.AsSpan(0, 16)).ToString();
     }
 
     /// <summary>

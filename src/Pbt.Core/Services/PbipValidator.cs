@@ -208,7 +208,8 @@ public static class PbipValidator
             }
             catch (JsonException)
             {
-                // JSON parse errors caught in ValidateJsonFiles
+                // JSON parse errors are reported by ValidateJsonFiles — skip duplicate binding check for this page
+                continue;
             }
 
             // Visuals (folder is optional; visual.json required IF folder exists)
@@ -291,7 +292,7 @@ public static class PbipValidator
 
             JsonDocument doc;
             try { doc = JsonDocument.Parse(content); }
-            catch { continue; } // Already caught in ValidateJsonFiles
+            catch (System.Text.Json.JsonException) { continue; } // Already caught in ValidateJsonFiles
 
             if (!doc.RootElement.TryGetProperty("$schema", out var schemaProp))
                 continue;
@@ -307,7 +308,12 @@ public static class PbipValidator
                     schema = await NJsonSchema.JsonSchema.FromUrlAsync(schemaUrl, ct);
                     schemaCache[schemaUrl] = schema;
                 }
-                catch (Exception ex)
+                catch (HttpRequestException ex)
+                {
+                    errors.Add($"Could not fetch schema for {rel}: {ex.Message}");
+                    continue;
+                }
+                catch (System.Text.Json.JsonException ex)
                 {
                     errors.Add($"Could not fetch schema for {rel}: {ex.Message}");
                     continue;
