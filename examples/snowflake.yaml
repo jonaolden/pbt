@@ -1,0 +1,163 @@
+# snowflake.yaml - Snowflake source configuration for pbt import
+#
+# Usage:
+#   pbt import snowflake snowflake.yaml
+#   pbt import snowflake snowflake.yaml ./my-tables
+#   pbt import snowflake snowflake.yaml --dry-run
+#   pbt import snowflake snowflake.yaml --test-connection
+#
+# Credentials are loaded from .env file (see .env.example):
+#   SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD,
+#   SNOWFLAKE_WAREHOUSE, SNOWFLAKE_ROLE
+
+source_type: snowflake
+
+# ──────────────────────────────────────────────
+# Connector: Snowflake connection configuration
+# ──────────────────────────────────────────────
+connector:
+  name: SnowflakeSource
+  connection: ${SNOWFLAKE_ACCOUNT}
+  warehouse: ${SNOWFLAKE_WAREHOUSE}
+  implementation: "2.0"
+
+# ──────────────────────────────────────────────
+# Import: Which tables to pull from Snowflake
+# ──────────────────────────────────────────────
+import:
+  database: ANALYTICS_DB
+  schema: PUBLIC
+  tables:
+    - RESERVATIONS
+    - ROOM_TYPES
+    - RATE_PLANS
+    - DAILY_REVENUE
+  # Use tables: ["*"] to import all base tables in the schema.
+  # Set include_views: true to also import views.
+  # include_views: false
+
+# ──────────────────────────────────────────────
+# Datatypes: Source-to-PBI type mappings
+# ──────────────────────────────────────────────
+datatypes:
+  mappings:
+    # Numeric types
+    - database_type: NUMBER
+      m_type: Int32.Type
+      tmdl_type: int64
+    - database_type: DECIMAL
+      m_type: Decimal.Type
+      tmdl_type: decimal
+    - database_type: NUMERIC
+      m_type: Decimal.Type
+      tmdl_type: decimal
+    - database_type: INT
+      m_type: Int32.Type
+      tmdl_type: int64
+    - database_type: INTEGER
+      m_type: Int32.Type
+      tmdl_type: int64
+    - database_type: BIGINT
+      m_type: Int64.Type
+      tmdl_type: int64
+    - database_type: SMALLINT
+      m_type: Int32.Type
+      tmdl_type: int64
+    - database_type: FLOAT
+      m_type: Decimal.Type
+      tmdl_type: decimal
+    - database_type: DOUBLE
+      m_type: Decimal.Type
+      tmdl_type: decimal
+
+    # String types
+    - database_type: VARCHAR
+      m_type: Text.Type
+      tmdl_type: string
+    - database_type: STRING
+      m_type: Text.Type
+      tmdl_type: string
+    - database_type: TEXT
+      m_type: Text.Type
+      tmdl_type: string
+    - database_type: CHAR
+      m_type: Text.Type
+      tmdl_type: string
+
+    # Date/time types
+    - database_type: DATE
+      m_type: Date.Type
+      tmdl_type: dateTime
+    - database_type: DATETIME
+      m_type: DateTime.Type
+      tmdl_type: dateTime
+    - database_type: TIMESTAMP
+      m_type: DateTime.Type
+      tmdl_type: dateTime
+    - database_type: TIMESTAMP_NTZ
+      m_type: DateTime.Type
+      tmdl_type: dateTime
+    - database_type: TIMESTAMP_LTZ
+      m_type: DateTime.Type
+      tmdl_type: dateTime
+    - database_type: TIMESTAMP_TZ
+      m_type: DateTime.Type
+      tmdl_type: dateTime
+    - database_type: TIME
+      m_type: Time.Type
+      tmdl_type: dateTime
+
+    # Boolean
+    - database_type: BOOLEAN
+      m_type: Logical.Type
+      tmdl_type: boolean
+
+    # Semi-structured (flattened to string in PBI)
+    - database_type: VARIANT
+      m_type: Text.Type
+      tmdl_type: string
+    - database_type: OBJECT
+      m_type: Text.Type
+      tmdl_type: string
+    - database_type: ARRAY
+      m_type: Text.Type
+      tmdl_type: string
+
+  # Pattern-based overrides (applied before type mappings)
+  regex_overrides:
+    - pattern: ["_ID$", "_ID_", "_KEY$", "_CODE$"]
+      m_type: Text.Type
+      tmdl_type: string
+    - pattern: ["_AMT$", "_AMOUNT$", "_REVENUE$", "_RATE$"]
+      m_type: Currency.Type
+      tmdl_type: decimal
+    - pattern: ["_QTY$", "_COUNT$", "_NIGHTS$"]
+      m_type: Int32.Type
+      tmdl_type: int64
+
+# ──────────────────────────────────────────────
+# Column naming: Conversion and visibility rules
+# ──────────────────────────────────────────────
+column_naming:
+  conversion: pascalcase
+
+  preserve_patterns:
+    - "^DW_"
+
+  groups:
+    - table_pattern: "^DIM_"
+      table_name_conversion: pascalcase
+      conversion: pascalcase
+      rules:
+        - pattern: "^DW_"
+          is_hidden: true
+          description: "Data warehouse metadata"
+
+    - table_pattern: "^FACT_"
+      table_is_hidden: true
+      table_name_conversion: pascalcase
+      conversion: pascalcase
+      rules:
+        - pattern: "^DW_"
+          is_hidden: true
+          description: "Data warehouse metadata"
