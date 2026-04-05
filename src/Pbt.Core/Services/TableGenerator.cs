@@ -86,8 +86,11 @@ public sealed class TableGenerator
             tableDef.Source.Connection = null;
         }
 
+        // Filter columns by exclude/include patterns
+        var filteredRows = FilterColumns(rows);
+
         // Generate columns
-        foreach (var row in rows)
+        foreach (var row in filteredRows)
         {
             var columnName = GetColumnName(row.ColumnName);
 
@@ -257,6 +260,57 @@ public sealed class TableGenerator
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Filter columns based on exclude/include patterns from source config.
+    /// Exclude is evaluated first, then include (if specified).
+    /// Group-level patterns override default patterns.
+    /// </summary>
+    private List<CsvSchemaRow> FilterColumns(List<CsvSchemaRow> rows)
+    {
+        // Resolve patterns: group overrides default
+        var excludePatterns = _currentNamingGroup?.ExcludePatterns?.Count > 0
+            ? _currentNamingGroup.ExcludePatterns
+            : _sourceTypeConfig?.ColumnNaming?.ExcludePatterns;
+
+        var includePatterns = _currentNamingGroup?.IncludePatterns?.Count > 0
+            ? _currentNamingGroup.IncludePatterns
+            : _sourceTypeConfig?.ColumnNaming?.IncludePatterns;
+
+        if ((excludePatterns == null || excludePatterns.Count == 0) &&
+            (includePatterns == null || includePatterns.Count == 0))
+        {
+            return rows;
+        }
+
+        return rows.Where(row =>
+        {
+            var colName = row.ColumnName;
+
+            // Exclude first
+            if (excludePatterns?.Count > 0)
+            {
+                foreach (var pattern in excludePatterns)
+                {
+                    if (Regex.IsMatch(colName, pattern, RegexOptions.IgnoreCase))
+                        return false;
+                }
+            }
+
+            // Include filter (if specified, column must match at least one)
+            if (includePatterns?.Count > 0)
+            {
+                foreach (var pattern in includePatterns)
+                {
+                    if (Regex.IsMatch(colName, pattern, RegexOptions.IgnoreCase))
+                        return true;
+                }
+                return false; // No include pattern matched
+            }
+
+            return true;
+        }).ToList();
     }
 
     /// <summary>
