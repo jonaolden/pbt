@@ -66,6 +66,19 @@ public class TableDefinition
     public List<MeasureDefinition> Measures { get; set; } = new();
 
     /// <summary>
+    /// Incremental refresh configuration.
+    /// When set, generates RangeStart/RangeEnd parameters and configures the refresh policy.
+    /// </summary>
+    public IncrementalRefreshDefinition? IncrementalRefresh { get; set; }
+
+    /// <summary>
+    /// Source column names to exclude from re-import.
+    /// Persisted per-table so excluded columns stay excluded across re-scaffolds.
+    /// Matched against source column names (case-insensitive).
+    /// </summary>
+    public List<string>? ExcludedColumns { get; set; }
+
+    /// <summary>
     /// Key-value annotations for tooling metadata and extended properties
     /// </summary>
     public Dictionary<string, string>? Annotations { get; set; }
