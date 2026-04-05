@@ -1,0 +1,56 @@
+/// Date dimension table with sort-by-column support
+table DateDim
+	lineageTag: 3c557afe-6025-bc0a-944e-5c396804e5c8
+
+	/// Date surrogate key
+	column DateKey
+		dataType: int64
+		isKey
+		lineageTag: d5bb8270-a301-0285-15d1-0c7738f1031a
+		summarizeBy: none
+		sourceColumn: DateKey
+
+	/// Calendar year
+	column Year
+		dataType: int64
+		lineageTag: 7a513f0b-60d7-2d06-366f-23250f965ee7
+		summarizeBy: none
+		sourceColumn: Year
+
+	/// Month number (hidden, used for sorting)
+	column MonthNum
+		dataType: int64
+		isHidden
+		lineageTag: 2d42b599-a7b8-f8ee-96a5-40d2a29529e0
+		summarizeBy: none
+		sourceColumn: MonthNum
+
+	/// Month name (sorted by MonthNum)
+	column MonthName
+		dataType: string
+		lineageTag: 84d9efdb-fca2-716b-8c00-9619a9fa8c71
+		sourceColumn: MonthName
+		sortByColumn: MonthNum
+
+	/// Fiscal quarter
+	column Quarter
+		dataType: string
+		lineageTag: 05150bce-0afe-f9b9-c40e-b13f90182bf5
+		sourceColumn: Quarter
+
+	partition DateDim = m
+		source = ```
+				let
+				  Source = #table(
+				    {"DateKey", "Year", "MonthNum", "MonthName", "Quarter"},
+				    {
+				      {20240115, 2024, 1, "January", "Q1"},
+				      {20240116, 2024, 1, "January", "Q1"},
+				      {20240601, 2024, 6, "June", "Q2"}
+				    }
+				  )
+				in
+				  Source
+				
+				```
+

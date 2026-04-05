@@ -1,13 +1,13 @@
 name: Customers
-description: Customer dimension table
+description: Customer dimension table with geography hierarchy
 m_expression: |
   let
     Source = #table(
-      {"CustomerID", "CustomerName", "City", "Country"},
+      {"CustomerID", "CustomerName", "City", "Country", "Region"},
       {
-        {101, "Acme Corp", "New York", "USA"},
-        {102, "Tech Solutions", "London", "UK"},
-        {103, "Global Industries", "Tokyo", "Japan"}
+        {101, "Acme Corp", "New York", "USA", "North America"},
+        {102, "Tech Solutions", "London", "UK", "Europe"},
+        {103, "Global Industries", "Tokyo", "Japan", "Asia"}
       }
     )
   in
@@ -24,16 +24,36 @@ columns:
   - name: CustomerName
     type: String
     source_column: CustomerName
-    description: Customer company name
+    description: Customer name
+    data_category: Organization
 
   - name: City
     type: String
     source_column: City
-    description: Customer city
+    description: City
     data_category: City
 
   - name: Country
     type: String
     source_column: Country
-    description: Customer country
+    description: Country
     data_category: Country
+    annotations:
+      PBI_GeoEncoding: Country
+
+  - name: Region
+    type: String
+    source_column: Region
+    description: Geographic region
+
+hierarchies:
+  - name: Geography
+    description: Geographic drill-down hierarchy
+    display_folder: Geo
+    levels:
+      - name: Region
+        column: Region
+      - name: Country
+        column: Country
+      - name: City
+        column: City

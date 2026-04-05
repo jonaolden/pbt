@@ -36,64 +36,110 @@ public class ModelComposerTests
 
         // Act
         var composer = new ModelComposer(registry);
-        var database = composer.ComposeModel(modelDef);
+        var database = composer.ComposeModel(modelDef, projectRootPath: exampleProjectPath);
 
         // Assert - Database
         Assert.NotNull(database);
         Assert.Equal("SalesAnalytics", database.Name);
-        Assert.Equal(1600, database.CompatibilityLevel);
+        Assert.Equal(1700, database.CompatibilityLevel);
         Assert.NotNull(database.Model);
 
-        // Assert - Tables
-        Assert.Equal(2, database.Model.Tables.Count);
+        // Assert - Tables: 3 regular + 1 calc group + 1 field parameter = 5
+        Assert.Equal(5, database.Model.Tables.Count);
         Assert.NotNull(database.Model.Tables.Find("Sales"));
         Assert.NotNull(database.Model.Tables.Find("Customers"));
+        Assert.NotNull(database.Model.Tables.Find("DateDim"));
+        Assert.NotNull(database.Model.Tables.Find("Time Intelligence"));
+        Assert.NotNull(database.Model.Tables.Find("Sales Metric"));
 
         // Assert - Sales table
-        var salesTable = database.Model.Tables.Find("Sales");
-        Assert.NotNull(salesTable);
-        Assert.Equal(4, salesTable.Columns.Count);
+        var salesTable = database.Model.Tables.Find("Sales")!;
+        Assert.Equal(6, salesTable.Columns.Count); // 5 data + 1 calculated
         Assert.NotNull(salesTable.Columns.Find("OrderID"));
-        Assert.NotNull(salesTable.Columns.Find("OrderDate"));
-        Assert.NotNull(salesTable.Columns.Find("Amount"));
-        Assert.NotNull(salesTable.Columns.Find("CustomerID"));
+        Assert.NotNull(salesTable.Columns.Find("IsLargeOrder"));
+        Assert.IsType<CalculatedColumn>(salesTable.Columns.Find("IsLargeOrder"));
 
-        // Assert - Sales table has partition with M expression
-        Assert.Single(salesTable.Partitions);
-        var partition = salesTable.Partitions[0];
-        Assert.IsType<MPartitionSource>(partition.Source);
-        var mSource = (MPartitionSource)partition.Source;
-        Assert.Contains("let", mSource.Expression);
+        // Assert - Sales has 2 partitions (Historical + Current)
+        Assert.Equal(2, salesTable.Partitions.Count);
+        Assert.Equal(ModeType.Import, salesTable.Partitions[0].Mode);
+
+        // Assert - Column properties
+        var orderIdCol = salesTable.Columns.Find("OrderID")!;
+        Assert.True(orderIdCol.IsKey);
+        Assert.Equal(AggregateFunction.None, orderIdCol.SummarizeBy);
+
+        var amountCol = salesTable.Columns.Find("Amount")!;
+        Assert.Equal(AggregateFunction.Sum, amountCol.SummarizeBy);
+        Assert.Equal("$#,##0.00", amountCol.FormatString);
 
         // Assert - Customers table
-        var customersTable = database.Model.Tables.Find("Customers");
-        Assert.NotNull(customersTable);
-        Assert.Equal(4, customersTable.Columns.Count);
+        var customersTable = database.Model.Tables.Find("Customers")!;
+        Assert.Equal(5, customersTable.Columns.Count);
+
+        // Assert - Hierarchy
+        Assert.Single(customersTable.Hierarchies);
+        var geoHierarchy = customersTable.Hierarchies[0];
+        Assert.Equal("Geography", geoHierarchy.Name);
+        Assert.Equal(3, geoHierarchy.Levels.Count);
+
+        // Assert - Data category and annotations
+        Assert.Equal("City", customersTable.Columns.Find("City")!.DataCategory);
+        Assert.Contains(customersTable.Columns.Find("Country")!.Annotations, a => a.Name == "PBI_GeoEncoding");
+
+        // Assert - DateDim table (sort by column)
+        var dateDimTable = database.Model.Tables.Find("DateDim")!;
+        var monthNameCol = dateDimTable.Columns.Find("MonthName")!;
+        var monthNumCol = dateDimTable.Columns.Find("MonthNum")!;
+        Assert.Equal(monthNumCol, monthNameCol.SortByColumn);
 
         // Assert - Relationships
-        Assert.Single(database.Model.Relationships);
-        var relationship = database.Model.Relationships[0] as SingleColumnRelationship;
-        Assert.NotNull(relationship);
-        Assert.Equal("Sales", relationship.FromColumn.Table.Name);
-        Assert.Equal("CustomerID", relationship.FromColumn.Name);
-        Assert.Equal("Customers", relationship.ToColumn.Table.Name);
-        Assert.Equal("CustomerID", relationship.ToColumn.Name);
-        Assert.Equal(RelationshipEndCardinality.Many, relationship.FromCardinality);
-        Assert.Equal(RelationshipEndCardinality.One, relationship.ToCardinality);
-        Assert.Equal(CrossFilteringBehavior.BothDirections, relationship.CrossFilteringBehavior);
-        Assert.True(relationship.IsActive);
+        Assert.Equal(2, database.Model.Relationships.Count);
 
-        // Assert - Measures
+        var custRelationship = database.Model.Relationships.Cast<SingleColumnRelationship>()
+            .First(r => r.ToColumn.Table.Name == "Customers");
+        Assert.Equal("Sales", custRelationship.FromColumn.Table.Name);
+        Assert.Equal("CustomerID", custRelationship.FromColumn.Name);
+        Assert.Equal(CrossFilteringBehavior.BothDirections, custRelationship.CrossFilteringBehavior);
+        Assert.True(custRelationship.RelyOnReferentialIntegrity);
+        Assert.True(custRelationship.IsActive);
+
+        var dateRelationship = database.Model.Relationships.Cast<SingleColumnRelationship>()
+            .First(r => r.ToColumn.Table.Name == "DateDim");
+        Assert.Equal(CrossFilteringBehavior.OneDirection, dateRelationship.CrossFilteringBehavior);
+
+        // Assert - Measures (table-level + model-level override)
         Assert.Equal(3, salesTable.Measures.Count);
-        var totalSalesMeasure = salesTable.Measures.Find("Total Sales");
-        Assert.NotNull(totalSalesMeasure);
+        var totalSalesMeasure = salesTable.Measures.Find("Total Sales")!;
         Assert.Equal("SUM(Sales[Amount])", totalSalesMeasure.Expression);
         Assert.Equal("$#,##0.00", totalSalesMeasure.FormatString);
         Assert.Equal("Sales Metrics", totalSalesMeasure.DisplayFolder);
+        Assert.NotNull(salesTable.Measures.Find("Average Order Value"));
+
+        // Assert - Calculation group
+        var calcGroupTable = database.Model.Tables.Find("Time Intelligence")!;
+        Assert.NotNull(calcGroupTable.CalculationGroup);
+        Assert.Equal(3, calcGroupTable.CalculationGroup.CalculationItems.Count);
+        Assert.Equal(10, calcGroupTable.CalculationGroup.Precedence);
+
+        // Assert - Perspectives
+        Assert.Single(database.Model.Perspectives);
+        Assert.Equal("Sales Overview", database.Model.Perspectives[0].Name);
+
+        // Assert - Roles
+        Assert.Single(database.Model.Roles);
+        Assert.Equal("RegionManager", database.Model.Roles[0].Name);
+        Assert.Equal(ModelPermission.Read, database.Model.Roles[0].ModelPermission);
+
+        // Assert - Field parameter
+        var fieldParamTable = database.Model.Tables.Find("Sales Metric")!;
+        Assert.Contains(fieldParamTable.Annotations, a => a.Name == "ParameterMetadata");
+
+        // Assert - Shared expressions (model-level)
+        Assert.True(database.Model.Expressions.Count >= 1);
 
         // Assert - Lineage tags generated
         Assert.False(string.IsNullOrWhiteSpace(salesTable.LineageTag));
-        Assert.False(string.IsNullOrWhiteSpace(salesTable.Columns.Find("OrderID")!.LineageTag));
+        Assert.False(string.IsNullOrWhiteSpace(orderIdCol.LineageTag));
         Assert.False(string.IsNullOrWhiteSpace(totalSalesMeasure.LineageTag));
     }
 

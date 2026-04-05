@@ -26,6 +26,13 @@ public class SourceTypeConfig
     /// Column naming configuration
     /// </summary>
     public ColumnNamingConfig? ColumnNaming { get; set; }
+
+    /// <summary>
+    /// Import filter configuration for live metadata extraction
+    /// (e.g., from Snowflake INFORMATION_SCHEMA).
+    /// When present, enables 'pbt import snowflake' to query the database directly.
+    /// </summary>
+    public SnowflakeImportConfig? Import { get; set; }
 }
 
 /// <summary>

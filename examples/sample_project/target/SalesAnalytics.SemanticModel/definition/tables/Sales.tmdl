@@ -1,0 +1,96 @@
+/// Sales fact table with multiple partitions
+table Sales
+	lineageTag: 2b25b94b-b008-5b1b-71cb-28c3c5a2bf57
+
+	/// Total sales amount
+	measure 'Total Sales' = SUM(Sales[Amount])
+		formatString: $#,##0.00
+		displayFolder: Sales Metrics
+		lineageTag: b4865325-66bb-d9c6-123b-82d40cead253
+
+	/// Count of orders
+	measure 'Number of Orders' = COUNTROWS(Sales)
+		formatString: #,##0
+		displayFolder: Sales Metrics
+		lineageTag: 5a3c895f-f57d-dbb5-4d30-858a4c779188
+
+	/// Average value per order
+	measure 'Average Order Value' = DIVIDE([Total Sales], [Number of Orders])
+		formatString: $#,##0.00
+		displayFolder: Sales Metrics
+		lineageTag: c2e78296-765d-41f9-875f-6fd0f541b405
+
+	/// Unique order identifier
+	column OrderID
+		dataType: int64
+		isKey
+		lineageTag: d12cd793-13eb-6c5e-a8d6-30052d5e8f40
+		summarizeBy: none
+		sourceColumn: OrderID
+
+	/// Date of the order
+	column OrderDate
+		dataType: dateTime
+		lineageTag: 9f201f30-dd5c-6626-d646-9e1496b73060
+		sourceColumn: OrderDate
+
+	/// Order amount
+	column Amount
+		dataType: decimal
+		formatString: $#,##0.00
+		lineageTag: 32aa192d-29cf-5c86-e9b1-f104be6b8354
+		summarizeBy: sum
+		sourceColumn: Amount
+
+	/// Customer foreign key
+	column CustomerID
+		dataType: int64
+		lineageTag: 90287973-a2db-7813-f87f-0819e549fda5
+		summarizeBy: none
+		sourceColumn: CustomerID
+
+	/// Date dimension key
+	column DateKey
+		dataType: int64
+		isHidden
+		lineageTag: a39713ff-cbe1-9d41-5300-00cb007cbbde
+		summarizeBy: none
+		sourceColumn: DateKey
+
+	/// Calculated flag for high-value orders
+	column IsLargeOrder = IF([Amount] > 1000, TRUE(), FALSE())
+		dataType: boolean
+		displayFolder: Flags
+		lineageTag: 41bee066-bac4-b123-139f-345c4ea1e85b
+
+	partition Sales_Historical = m
+		mode: import
+		source = ```
+				let
+				  Source = #table(
+				    {"OrderID", "OrderDate", "Amount", "CustomerID", "DateKey"},
+				    {
+				      {1, #date(2024, 1, 15), 1500.00, 101, 20240115},
+				      {2, #date(2024, 1, 16), 2300.50, 102, 20240116}
+				    }
+				  )
+				in
+				  Source
+				
+				```
+
+	partition Sales_Current = m
+		mode: import
+		source = ```
+				let
+				  Source = #table(
+				    {"OrderID", "OrderDate", "Amount", "CustomerID", "DateKey"},
+				    {
+				      {3, #date(2024, 6, 1), 950.75, 101, 20240601}
+				    }
+				  )
+				in
+				  Source
+				
+				```
+

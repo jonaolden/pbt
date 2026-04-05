@@ -2,6 +2,7 @@ using System.CommandLine;
 using Pbt.Core.Infrastructure;
 using Pbt.Core.Models;
 using Pbt.Core.Services;
+using Pbt.Infrastructure;
 
 namespace Pbt.Commands;
 
@@ -95,12 +96,9 @@ public static class LineageCommand
         return command;
     }
 
-    private static void ExecuteShow(string projectPath, bool showDetails)
+    private static void ExecuteShow(string inputPath, bool showDetails)
     {
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
-        }
+        var (projectPath, _) = PathResolver.Resolve(inputPath);
 
         var manifestPath = Path.Combine(projectPath, ".pbt", "lineage.yaml");
         if (!File.Exists(manifestPath))
@@ -190,12 +188,9 @@ public static class LineageCommand
         }
     }
 
-    private static void ExecuteClean(string projectPath, bool dryRun)
+    private static void ExecuteClean(string inputPath, bool dryRun)
     {
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
-        }
+        var (projectPath, _) = PathResolver.Resolve(inputPath);
 
         var manifestPath = Path.Combine(projectPath, ".pbt", "lineage.yaml");
         if (!File.Exists(manifestPath))
@@ -257,12 +252,9 @@ public static class LineageCommand
         }
     }
 
-    private static void ExecuteReset(string projectPath, bool confirm)
+    private static void ExecuteReset(string inputPath, bool confirm)
     {
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
-        }
+        var (projectPath, _) = PathResolver.Resolve(inputPath);
 
         var manifestPath = Path.Combine(projectPath, ".pbt", "lineage.yaml");
         if (!File.Exists(manifestPath))

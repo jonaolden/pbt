@@ -2,6 +2,7 @@ using System.CommandLine;
 using Pbt.Core.Infrastructure;
 using Pbt.Core.Models;
 using Pbt.Core.Services;
+using Pbt.Infrastructure;
 
 namespace Pbt.Commands;
 
@@ -12,7 +13,7 @@ public static class ListCommand
         var projectPathArgument = new Argument<string>(
             "project-path",
             () => ".",
-            "Path to the project directory (defaults to current directory)");
+            "Path to the project directory or a model YAML file (defaults to current directory)");
 
         var detailsOption = new Option<bool>(
             "--details",
@@ -42,13 +43,9 @@ public static class ListCommand
         return command;
     }
 
-    private static void ExecuteList(string projectPath, bool showDetails)
+    private static void ExecuteList(string inputPath, bool showDetails)
     {
-        // Validate project path
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
-        }
+        var (projectPath, _) = PathResolver.Resolve(inputPath);
 
         var serializer = new YamlSerializer();
         var assetLoader = new AssetLoader(serializer);
@@ -181,44 +178,6 @@ public static class ListCommand
             }
         }
         Console.WriteLine();
-
-        // List macros from configured paths
-        if (assetPaths.MacroPaths.Count > 0)
-        {
-            var macroNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var macroFiles = new List<string>();
-
-            foreach (var macrosPath in assetPaths.MacroPaths)
-            {
-                if (Directory.Exists(macrosPath))
-                {
-                    var files = Directory.GetFiles(macrosPath, "*.yaml")
-                        .Concat(Directory.GetFiles(macrosPath, "*.yml"));
-
-                    foreach (var file in files)
-                    {
-                        var macroName = Path.GetFileNameWithoutExtension(file);
-                        if (macroNames.Add(macroName))
-                        {
-                            macroFiles.Add(file);
-                        }
-                    }
-                }
-            }
-
-            if (macroFiles.Count > 0)
-            {
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.WriteLine($"Macros ({macroFiles.Count}):");
-                Console.ResetColor();
-
-                foreach (var macroFile in macroFiles.OrderBy(f => Path.GetFileNameWithoutExtension(f)))
-                {
-                    Console.WriteLine($"  - {Path.GetFileNameWithoutExtension(macroFile)}");
-                }
-                Console.WriteLine();
-            }
-        }
 
         // Check for lineage manifest
         var lineageManifestPath = Path.Combine(projectPath, ".pbt", "lineage.yaml");

@@ -6,7 +6,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Smart merge service that preserves manual edits when re-scaffolding
 /// </summary>
-public class SmartMerger
+public sealed class SmartMerger
 {
     private readonly YamlSerializer _serializer;
     private readonly MergeOptions _options;
@@ -34,7 +34,7 @@ public class SmartMerger
         {
             existing = _serializer.LoadFromFile<TableDefinition>(filePath);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             Console.WriteLine($"Warning: Could not load existing file '{filePath}': {ex.Message}");
             Console.WriteLine("Using generated table definition.");
@@ -215,7 +215,7 @@ public class SmartMerger
         {
             existing = _serializer.LoadFromFile<TableDefinition>(filePath);
         }
-        catch
+        catch (InvalidOperationException)
         {
             Console.WriteLine($"  [ERROR] Cannot read existing file: {Path.GetFileName(filePath)}");
             return;

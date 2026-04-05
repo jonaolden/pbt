@@ -10,7 +10,7 @@ namespace Pbt.Core.Infrastructure;
 /// <summary>
 /// Service for serializing and deserializing YAML files with snake_case convention
 /// </summary>
-public class YamlSerializer
+public sealed class YamlSerializer
 {
     private readonly IDeserializer _deserializer;
     private readonly ISerializer _serializer;
@@ -22,7 +22,6 @@ public class YamlSerializer
         _deserializer = new DeserializerBuilder()
             .WithNamingConvention(UnderscoredNamingConvention.Instance)
             .WithTypeConverter(new RelationshipDefinitionYamlConverter())
-            .IgnoreUnmatchedProperties()
             .Build();
 
         // Configure serializer (C# -> YAML)
@@ -48,7 +47,11 @@ public class YamlSerializer
             var yaml = File.ReadAllText(filePath);
             return _deserializer.Deserialize<T>(yaml);
         }
-        catch (Exception ex)
+        catch (IOException ex)
+        {
+            throw new InvalidOperationException($"Failed to read YAML file: {filePath}", ex);
+        }
+        catch (YamlException ex)
         {
             throw new InvalidOperationException($"Failed to parse YAML file: {filePath}", ex);
         }
@@ -63,7 +66,7 @@ public class YamlSerializer
         {
             return _deserializer.Deserialize<T>(yaml);
         }
-        catch (Exception ex)
+        catch (YamlException ex)
         {
             throw new InvalidOperationException("Failed to deserialize YAML", ex);
         }
@@ -87,7 +90,11 @@ public class YamlSerializer
 
             File.WriteAllText(filePath, yaml);
         }
-        catch (Exception ex)
+        catch (YamlException ex)
+        {
+            throw new InvalidOperationException($"Failed to save YAML file: {filePath}", ex);
+        }
+        catch (IOException ex)
         {
             throw new InvalidOperationException($"Failed to save YAML file: {filePath}", ex);
         }
@@ -102,7 +109,7 @@ public class YamlSerializer
         {
             return _serializer.Serialize(obj);
         }
-        catch (Exception ex)
+        catch (YamlException ex)
         {
             throw new InvalidOperationException("Failed to serialize to YAML", ex);
         }

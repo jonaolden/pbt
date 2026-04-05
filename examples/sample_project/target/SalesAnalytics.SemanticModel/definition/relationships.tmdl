@@ -1,0 +1,10 @@
+relationship 33db78ea-8975-6858-7098-bb61e5750bc9
+	crossFilteringBehavior: bothDirections
+	relyOnReferentialIntegrity
+	fromColumn: Sales.CustomerID
+	toColumn: Customers.CustomerID
+
+relationship d64f9711-98b1-72f8-60ac-c0837ad1c7e4
+	fromColumn: Sales.DateKey
+	toColumn: DateDim.DateKey
+

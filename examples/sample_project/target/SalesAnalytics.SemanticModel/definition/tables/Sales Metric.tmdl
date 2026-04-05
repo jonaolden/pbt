@@ -1,0 +1,30 @@
+/// Dynamic metric selector for reports
+table 'Sales Metric'
+	lineageTag: f2d23edd-9bfb-acae-b3d5-1d7f3b4c00de
+
+	column 'Sales Metric'
+		dataType: string
+		isHidden
+		lineageTag: d0bbc3e8-8328-9a32-ac11-54a5a3c9ee0d
+		sourceColumn: [Value1]
+
+	column 'Sales Metric Fields'
+		dataType: string
+		lineageTag: f08d6334-6e83-3852-0f7b-58a6af561a17
+		sourceColumn: [Value2]
+
+	column 'Sales Metric Order'
+		dataType: int64
+		isHidden
+		lineageTag: 7588c46f-55ce-09ec-2811-d310de77210d
+		sourceColumn: [Value3]
+
+	partition 'Sales Metric' = calculated
+		source =
+				{
+				    (NAMEOF('Sales'[Total Sales]), "Total Sales", 0),
+				    (NAMEOF('Sales'[Number of Orders]), "Number of Orders", 1)
+				}
+
+	annotation ParameterMetadata = {"version":3,"kind":2}
+

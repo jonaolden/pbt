@@ -7,8 +7,9 @@ namespace Pbt.Core.Services;
 /// Maps database types to M and TMDL types using source-specific configuration
 /// Supports dual type conversion for query folding optimization
 /// </summary>
-public class SourceTypeMapper
+public sealed class SourceTypeMapper
 {
+    private static readonly Regex BaseTypeExtractor = new(@"^([A-Za-z_]+)", RegexOptions.Compiled);
     private readonly SourceTypeConfig _config;
 
     public SourceTypeMapper(SourceTypeConfig config)
@@ -64,7 +65,7 @@ public class SourceTypeMapper
     /// </summary>
     private string ExtractBaseType(string databaseType)
     {
-        var match = Regex.Match(databaseType, @"^([A-Za-z_]+)");
+        var match = BaseTypeExtractor.Match(databaseType);
         return match.Success ? match.Groups[1].Value : databaseType;
     }
 

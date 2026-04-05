@@ -1,0 +1,46 @@
+name: DateDim
+description: Date dimension table with sort-by-column support
+m_expression: |
+  let
+    Source = #table(
+      {"DateKey", "Year", "MonthNum", "MonthName", "Quarter"},
+      {
+        {20240115, 2024, 1, "January", "Q1"},
+        {20240116, 2024, 1, "January", "Q1"},
+        {20240601, 2024, 6, "June", "Q2"}
+      }
+    )
+  in
+    Source
+
+columns:
+  - name: DateKey
+    type: Int64
+    source_column: DateKey
+    description: Date surrogate key
+    is_key: true
+    summarize_by: None
+
+  - name: Year
+    type: Int64
+    source_column: Year
+    description: Calendar year
+    summarize_by: None
+
+  - name: MonthNum
+    type: Int64
+    source_column: MonthNum
+    description: Month number (hidden, used for sorting)
+    is_hidden: true
+    summarize_by: None
+
+  - name: MonthName
+    type: String
+    source_column: MonthName
+    description: Month name (sorted by MonthNum)
+    sort_by_column: MonthNum
+
+  - name: Quarter
+    type: String
+    source_column: Quarter
+    description: Fiscal quarter

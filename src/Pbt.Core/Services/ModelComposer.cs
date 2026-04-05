@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AnalysisServices.Tabular;
 using Pbt.Core.Models;
 
@@ -6,8 +7,9 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Composes TOM Database objects from model definitions
 /// </summary>
-public class ModelComposer
+public sealed class ModelComposer
 {
+    private static readonly Regex EnvVarPattern = new(@"\$\{(\w+)\}", RegexOptions.Compiled);
     private readonly TableRegistry _tableRegistry;
     private LineageManifestService? _lineageService;
     private ModelDefinition? _modelDef;
@@ -65,6 +67,28 @@ public class ModelComposer
         };
 
         var model = database.Model;
+        model.Culture = modelDef.Culture;
+        model.DiscourageImplicitMeasures = modelDef.DiscourageImplicitMeasures;
+        model.DefaultPowerBIDataSourceVersion = Microsoft.AnalysisServices.Tabular.PowerBIDataSourceVersion.PowerBI_V3;
+        model.SourceQueryCulture = modelDef.SourceQueryCulture;
+
+        // Data access options
+        model.DataAccessOptions.LegacyRedirects = true;
+        model.DataAccessOptions.ReturnErrorValuesAsNull = true;
+
+        // Disable auto time intelligence by default
+        model.Annotations.Add(new Annotation
+        {
+            Name = "__PBI_TimeIntelligenceEnabled",
+            Value = modelDef.AutoTimeIntelligence ? "1" : "0"
+        });
+
+        // Enable dev mode tooling
+        model.Annotations.Add(new Annotation
+        {
+            Name = "PBI_ProTooling",
+            Value = "[\"DevMode\"]"
+        });
 
         // 1. Add tables
         foreach (var tableRef in modelDef.Tables)
@@ -1066,7 +1090,7 @@ public class ModelComposer
     /// </summary>
     private static string SubstituteEnvironmentVariables(string value)
     {
-        return System.Text.RegularExpressions.Regex.Replace(value, @"\$\{(\w+)\}", match =>
+        return EnvVarPattern.Replace(value, match =>
         {
             var envVarName = match.Groups[1].Value;
             var envValue = Environment.GetEnvironmentVariable(envVarName);

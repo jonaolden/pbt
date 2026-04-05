@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Result of validation containing errors and warnings
 /// </summary>
-public class ValidationResult
+public sealed class ValidationResult
 {
     private readonly List<ValidationError> _errors = new();
     private readonly List<ValidationError> _warnings = new();
@@ -50,6 +50,15 @@ public class ValidationResult
     }
 
     /// <summary>
+    /// Merge all errors and warnings from another result into this one
+    /// </summary>
+    public void Merge(ValidationResult other)
+    {
+        _errors.AddRange(other.Errors);
+        _warnings.AddRange(other.Warnings);
+    }
+
+    /// <summary>
     /// Format all errors and warnings as a readable string
     /// </summary>
     public string FormatMessages()
@@ -92,7 +101,7 @@ public class ValidationResult
 /// <summary>
 /// A single validation error or warning
 /// </summary>
-public class ValidationError
+public sealed class ValidationError
 {
     public ValidationSeverity Severity { get; }
     public string Message { get; }

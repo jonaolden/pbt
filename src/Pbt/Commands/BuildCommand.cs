@@ -3,6 +3,7 @@ using Microsoft.AnalysisServices.Tabular;
 using Pbt.Core.Infrastructure;
 using Pbt.Core.Models;
 using Pbt.Core.Services;
+using Pbt.Infrastructure;
 
 namespace Pbt.Commands;
 
@@ -13,7 +14,7 @@ public static class BuildCommand
         var projectPathArgument = new Argument<string>(
             "project-path",
             () => ".",
-            "Path to the project directory (defaults to current directory)");
+            "Path to the project directory or a model YAML file (defaults to current directory)");
 
         var modelOption = new Option<string?>(
             "--model",
@@ -112,7 +113,7 @@ public static class BuildCommand
         var projectPathArgument = new Argument<string>(
             "project-path",
             () => ".",
-            "Path to the project directory (defaults to current directory)");
+            "Path to the project directory or a model YAML file (defaults to current directory)");
 
         var modelOption = new Option<string?>(
             "--model",
@@ -191,9 +192,9 @@ public static class BuildCommand
         return command;
     }
 
-    private static void ExecuteModelBuild(string projectPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
+    private static void ExecuteModelBuild(string inputPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
     {
-        var models = ExecuteCoreBuild(projectPath, modelName, noLineageTags, out var lineageService, envName, preHook);
+        var models = ExecuteCoreBuild(inputPath, modelName, noLineageTags, out var lineageService, out var projectRoot, envName, preHook);
 
         if (dryRun)
         {
@@ -203,14 +204,14 @@ public static class BuildCommand
             return;
         }
 
-        var targetPath = outputPath ?? Path.Combine(projectPath, "target");
+        var targetPath = outputPath ?? Path.Combine(projectRoot, "target");
 
         foreach (var (database, _, modelName_) in models)
         {
             GenerateTmdlOutput(database, modelName_, targetPath, lineageService);
         }
 
-        SaveLineageManifest(lineageService, projectPath);
+        SaveLineageManifest(lineageService, projectRoot);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"\n✓ Build completed successfully");
@@ -219,9 +220,9 @@ public static class BuildCommand
 
     #endregion
 
-    private static void ExecuteProjectBuild(string projectPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
+    private static void ExecuteProjectBuild(string inputPath, string? modelName, string? outputPath, bool noLineageTags, string? envName = null, bool dryRun = false, string? preHook = null)
     {
-        var models = ExecuteCoreBuild(projectPath, modelName, noLineageTags, out var lineageService, envName, preHook);
+        var models = ExecuteCoreBuild(inputPath, modelName, noLineageTags, out var lineageService, out var projectRoot, envName, preHook);
 
         if (dryRun)
         {
@@ -231,14 +232,14 @@ public static class BuildCommand
             return;
         }
 
-        var targetPath = outputPath ?? Path.Combine(projectPath, "target");
+        var targetPath = outputPath ?? Path.Combine(projectRoot, "target");
 
         foreach (var (database, _, modelName_) in models)
         {
             GeneratePbipOutput(database, modelName_, targetPath, lineageService);
         }
 
-        SaveLineageManifest(lineageService, projectPath);
+        SaveLineageManifest(lineageService, projectRoot);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"\n✓ Build completed successfully");
@@ -248,13 +249,18 @@ public static class BuildCommand
     #region Shared Build Logic
 
     private static List<(Database database, string modelFileName, string modelName)> ExecuteCoreBuild(
-        string projectPath,
+        string inputPath,
         string? modelName,
         bool noLineageTags,
         out LineageManifestService? lineageService,
+        out string projectRoot,
         string? envName = null,
         string? preHook = null)
     {
+        // Resolve input: may be a project directory or a model YAML file
+        var (projectPath, modelFilter) = PathResolver.Resolve(inputPath);
+        projectRoot = projectPath;
+
         Console.WriteLine($"Building project: {projectPath}");
         Console.WriteLine();
 
@@ -265,26 +271,36 @@ public static class BuildCommand
             var hookProcess = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh",
-                Arguments = OperatingSystem.IsWindows() ? $"/c {preHook}" : $"-c \"{preHook}\"",
+                Arguments = OperatingSystem.IsWindows() ? $"/c {preHook}" : $"-c {preHook}",
                 WorkingDirectory = projectPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             });
-            hookProcess?.WaitForExit();
-            if (hookProcess?.ExitCode != 0)
+
+            if (hookProcess == null)
             {
-                var stderr = hookProcess?.StandardError.ReadToEnd();
-                throw new InvalidOperationException($"Pre-hook failed with exit code {hookProcess?.ExitCode}: {stderr}");
+                throw new InvalidOperationException("Failed to start pre-hook process");
+            }
+
+            // Read streams before WaitForExit to avoid deadlock with redirected output
+            var stdoutTask = hookProcess.StandardOutput.ReadToEndAsync();
+            var stderrTask = hookProcess.StandardError.ReadToEndAsync();
+
+            const int hookTimeoutMs = 60_000; // 60 second timeout
+            if (!hookProcess.WaitForExit(hookTimeoutMs))
+            {
+                hookProcess.Kill(entireProcessTree: true);
+                throw new InvalidOperationException($"Pre-hook timed out after {hookTimeoutMs / 1000}s and was terminated");
+            }
+
+            var stderr = stderrTask.Result;
+            if (hookProcess.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"Pre-hook failed with exit code {hookProcess.ExitCode}: {stderr}");
             }
             Console.WriteLine("Pre-hook completed.");
             Console.WriteLine();
-        }
-
-        // Validate project path
-        if (!Directory.Exists(projectPath))
-        {
-            throw new DirectoryNotFoundException($"Project directory not found: {projectPath}");
         }
 
         var serializer = new YamlSerializer();
@@ -294,15 +310,17 @@ public static class BuildCommand
         // 1. Find model files by convention (models/ subdirectory)
         var modelFiles = assetLoader.FindModelFiles(projectPath);
 
-        if (modelName != null)
+        // Apply model filter: --model flag takes priority, then file-based filter from PathResolver
+        var effectiveModelFilter = modelName ?? modelFilter;
+        if (effectiveModelFilter != null)
         {
             modelFiles = modelFiles.Where(f =>
-                Path.GetFileNameWithoutExtension(f).Equals(modelName, StringComparison.OrdinalIgnoreCase))
+                Path.GetFileNameWithoutExtension(f).Equals(effectiveModelFilter, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             if (modelFiles.Count == 0)
             {
-                throw new FileNotFoundException($"Model '{modelName}' not found in models/ directory");
+                throw new FileNotFoundException($"Model '{effectiveModelFilter}' not found in models/ directory");
             }
         }
 
@@ -504,6 +522,21 @@ public static class BuildCommand
             Console.WriteLine($"  Lineage tags: {lineageService.NewTagCount} new, {lineageService.ExistingTagCount} existing");
         }
 
+        // Validate PBIP structure
+        var validationErrors = PbipGenerator.ValidatePbipStructure(targetPath, projectName);
+        if (validationErrors.Count > 0)
+        {
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("PBIP validation errors:");
+            foreach (var error in validationErrors)
+            {
+                Console.WriteLine($"  ✗ {error}");
+            }
+            Console.ResetColor();
+            throw new InvalidOperationException($"PBIP structure validation failed with {validationErrors.Count} error(s)");
+        }
+
         Console.WriteLine();
     }
 
@@ -547,10 +580,14 @@ public static class BuildCommand
                     connectorNames.Add(sourceConfig.Connector.Name);
                 }
             }
-            catch (Exception)
+            catch (YamlDotNet.Core.YamlException)
             {
                 // Skip files that cannot be parsed as SourceTypeConfig —
                 // the *_config.yaml glob may match unrelated config files.
+            }
+            catch (IOException)
+            {
+                // Skip unreadable config files
             }
         }
 

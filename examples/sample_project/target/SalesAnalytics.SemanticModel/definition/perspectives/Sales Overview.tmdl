@@ -1,0 +1,37 @@
+/// High-level sales view for executives
+perspective 'Sales Overview'
+
+	perspectiveTable Sales
+
+		perspectiveMeasure 'Total Sales'
+
+		perspectiveMeasure 'Number of Orders'
+
+		perspectiveMeasure 'Average Order Value'
+
+		perspectiveColumn OrderID
+
+		perspectiveColumn OrderDate
+
+		perspectiveColumn Amount
+
+		perspectiveColumn CustomerID
+
+		perspectiveColumn DateKey
+
+		perspectiveColumn IsLargeOrder
+
+	perspectiveTable Customers
+
+		perspectiveColumn CustomerID
+
+		perspectiveColumn CustomerName
+
+		perspectiveColumn City
+
+		perspectiveColumn Country
+
+		perspectiveColumn Region
+
+		perspectiveHierarchy Geography
+

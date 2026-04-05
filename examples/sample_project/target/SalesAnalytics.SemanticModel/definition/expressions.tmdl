@@ -1,0 +1,4 @@
+/// Target database name
+expression DatabaseName = "SalesDB" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 471273a9-ac0b-ea7a-5e6e-a002ebeed97f
+

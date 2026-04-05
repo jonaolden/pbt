@@ -8,7 +8,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Validates PBI Composer projects using structural checks and TOM validation
 /// </summary>
-public class Validator
+public sealed class Validator
 {
     private readonly YamlSerializer _serializer;
 
@@ -36,6 +36,9 @@ public class Validator
     {
         "Import", "DirectQuery", "Dual"
     };
+
+    private const int MinCompatibilityLevel = 1200;
+    private const int MaxCompatibilityLevel = 1700;
 
     public Validator(YamlSerializer serializer)
     {
@@ -74,7 +77,12 @@ public class Validator
                 ValidateTableStructure(table, result);
             }
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
+        {
+            result.AddError($"Failed to load tables: {ex.Message}");
+            return result;
+        }
+        catch (DirectoryNotFoundException ex)
         {
             result.AddError($"Failed to load tables: {ex.Message}");
             return result;
@@ -85,7 +93,7 @@ public class Validator
         {
             ValidateModelReferences(model, registry, modelFilePath, result);
         }
-        catch (Exception ex)
+        catch (KeyNotFoundException ex)
         {
             result.AddError($"Failed to validate model: {ex.Message}", modelFilePath);
         }
@@ -135,7 +143,7 @@ public class Validator
             {
                 model = _serializer.LoadFromFile<ModelDefinition>(modelFile);
             }
-            catch (Exception ex)
+            catch (InvalidOperationException ex)
             {
                 result.AddError($"Failed to load model file: {ex.Message}", modelFile);
                 continue;
@@ -143,8 +151,7 @@ public class Validator
 
             var assetPaths = assetLoader.ResolveAssetPaths(model, projectPath);
             var modelResult = ValidateProjectWithAssets(model, modelFile, assetPaths);
-            foreach (var error in modelResult.Errors) result.Errors.Add(error);
-            foreach (var warning in modelResult.Warnings) result.Warnings.Add(warning);
+            result.Merge(modelResult);
         }
 
         return result;
@@ -160,12 +167,12 @@ public class Validator
             result.AddError("Model name is required", filePath);
         }
 
-        if (model.CompatibilityLevel < 1200 || model.CompatibilityLevel > 1700)
+        if (model.CompatibilityLevel < MinCompatibilityLevel || model.CompatibilityLevel > MaxCompatibilityLevel)
         {
             result.AddWarning(
                 $"Unusual compatibility level: {model.CompatibilityLevel}",
                 filePath,
-                context: "Common values are 1200, 1400, 1500, 1600");
+                context: $"Expected range: {MinCompatibilityLevel}-{MaxCompatibilityLevel}. Common values are 1200, 1400, 1500, 1600");
         }
     }
 
@@ -510,7 +517,7 @@ public class Validator
             // If we get here without exceptions, TOM model is structurally valid
             return result;
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
             result.AddError($"TOM model validation failed: {ex.Message}", modelName);
             return result;

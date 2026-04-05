@@ -1,0 +1,6 @@
+/// Managers can only see their region's data
+role RegionManager
+	modelPermission: read
+
+	tablePermission Customers = [Country] = "USA"
+

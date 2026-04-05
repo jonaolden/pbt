@@ -23,6 +23,32 @@ public class ModelDefinition
     public int CompatibilityLevel { get; set; } = 1600;
 
     /// <summary>
+    /// When true, Power BI discourages implicit measures (required for calculation groups).
+    /// Defaults to true. Set to false in model YAML to override.
+    /// </summary>
+    public bool DiscourageImplicitMeasures { get; set; } = true;
+
+    /// <summary>
+    /// Culture/locale for the model (e.g., "en-US").
+    /// Defaults to "en-US" if not specified.
+    /// </summary>
+    public string Culture { get; set; } = "en-US";
+
+    /// <summary>
+    /// Source query culture/locale (e.g., "en-SE").
+    /// Controls how data source queries interpret locale-specific formats.
+    /// Defaults to "en-US" if not specified.
+    /// </summary>
+    public string SourceQueryCulture { get; set; } = "en-US";
+
+    /// <summary>
+    /// When true, Power BI auto-generates time intelligence for date columns.
+    /// Defaults to false (disabled) to avoid unwanted auto-generated date hierarchies.
+    /// Set to true in model YAML to enable.
+    /// </summary>
+    public bool AutoTimeIntelligence { get; set; } = false;
+
+    /// <summary>
     /// Format strings applied to columns by data type when no explicit format_string is set.
     /// Maps type names (e.g., "int64", "decimal", "dateTime") to format strings.
     /// </summary>

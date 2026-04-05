@@ -104,7 +104,10 @@ public static class DiffCommand
                 var table = serializer.LoadFromFile<TableDefinition>(file);
                 tables[table.Name] = table;
             }
-            catch { /* skip unparseable files */ }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Warning: skipping unparseable table file '{Path.GetFileName(file)}': {ex.Message}");
+            }
         }
 
         return tables;
@@ -124,7 +127,10 @@ public static class DiffCommand
                 var model = serializer.LoadFromFile<ModelDefinition>(file);
                 models[model.Name] = model;
             }
-            catch { /* skip unparseable files */ }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Warning: skipping unparseable model file '{Path.GetFileName(file)}': {ex.Message}");
+            }
         }
 
         return models;

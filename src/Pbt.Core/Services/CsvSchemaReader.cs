@@ -8,7 +8,7 @@ namespace Pbt.Core.Services;
 /// <summary>
 /// Reads CSV schema files (e.g., information_schema exports from Snowflake/SQL Server)
 /// </summary>
-public class CsvSchemaReader
+public sealed class CsvSchemaReader
 {
     /// <summary>
     /// Read schema rows from CSV file

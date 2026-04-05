@@ -783,6 +783,15 @@ public class ValidatorTests
         Directory.CreateDirectory(tempPath);
         Directory.CreateDirectory(Path.Combine(tempPath, "tables"));
         Directory.CreateDirectory(Path.Combine(tempPath, "models"));
+
+        // Create a minimal model file so ValidateProject doesn't short-circuit
+        var modelDef = new ModelDefinition
+        {
+            Name = "TestModel",
+            Tables = new List<TableReference> { new() { Ref = "TestTable" } }
+        };
+        _serializer.SaveToFile(modelDef, Path.Combine(tempPath, "models", "model.yaml"));
+
         return tempPath;
     }
 
