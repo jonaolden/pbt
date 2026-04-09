@@ -97,18 +97,13 @@ tables:
 | `pbt lineage show/clean/reset <path>` | Manage lineage tag manifest |
 | `pbt diff <path-a> <path-b> [--breaking]` | Detect breaking schema changes |
 
-Run `pbt <command> --help` for full option details.
+Run `pbt <command> --help` for full option details, or see the [CLI reference](docs/cli-reference.md).
 
 ## Examples
 
-The `examples/sample_project/` directory contains a complete working project demonstrating:
+The `examples/sample_project/` directory contains a complete working project demonstrating fact and dimension tables, model composition, relationships, DAX measures, calculation groups, time intelligence, perspectives, RLS roles, environment overrides, and pre-build hook scripts.
 
-- Fact and dimension table definitions with multiple partitions
-- Multi-table model composition with relationships
-- DAX measures and calculation groups
-- Time intelligence, perspectives, and RLS roles
-- Dev/prod environment overrides
-- Pre-build hook scripts
+See the [example project walkthrough](docs/example-project.md) for an annotated tour of every file.
 
 ## Contributing
 
