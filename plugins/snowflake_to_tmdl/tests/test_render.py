@@ -71,7 +71,31 @@ def test_render_with_partition(ref, columns):
     assert "partition RESERVATIONS = m" in tmdl
     assert "mode: import" in tmdl
     assert "Snowflake.Databases" in tmdl
-    assert f"{ref.database}.{ref.schema}.{ref.table}" in tmdl
+
+
+def test_partition_uses_navigation_steps(ref, columns):
+    tmdl = render_table_tmdl(ref, columns, include_partition=True)
+    # DB -> Schema -> Table navigation, not a raw SELECT
+    assert f'[Name="{ref.database}", Kind="Database"]' in tmdl
+    assert f'[Name="{ref.schema}", Kind="Schema"]' in tmdl
+    assert f'[Name="{ref.table}", Kind="Table"]' in tmdl
+    assert "Value.NativeQuery" not in tmdl
+    assert "SELECT *" not in tmdl
+
+
+def test_partition_selects_columns_explicitly(ref, columns):
+    tmdl = render_table_tmdl(ref, columns, include_partition=True)
+    assert "Table.SelectColumns(" in tmdl
+    assert "MissingField.UseNull" in tmdl
+    for col in columns:
+        assert f'"{col.name}"' in tmdl
+
+
+def test_no_partition_omits_m_block(ref, columns):
+    tmdl = render_table_tmdl(ref, columns, include_partition=False)
+    assert "partition" not in tmdl
+    assert "Snowflake.Databases" not in tmdl
+    assert "Table.SelectColumns" not in tmdl
 
 
 def test_render_table_name_override(ref, columns):

@@ -50,21 +50,38 @@ def _render_column(col: ColumnSchema, table_name: str) -> list[str]:
     return lines
 
 
-def _render_partition(ref: SnowflakeRef, table_name: str) -> list[str]:
+def _render_column_list(columns: Iterable[ColumnSchema]) -> str:
+    quoted = [f'"{c.name}"' for c in columns]
+    return "{" + ", ".join(quoted) + "}"
+
+
+def _render_partition(
+    ref: SnowflakeRef,
+    table_name: str,
+    columns: Iterable[ColumnSchema],
+) -> list[str]:
     """Emit an M partition that reads the source table from Snowflake.
 
-    The expression uses the standard Snowflake.Databases connector signature.
-    It assumes a Power BI ``SnowflakeConnection`` shared expression is
-    available, or that the user will adjust the connection details in the
-    generated TMDL. This keeps the MVP self-contained without requiring an
-    expressions.tmdl to be generated alongside.
+    The expression navigates the Snowflake source via the standard
+    ``Snowflake.Databases`` connector and explicitly selects the columns
+    captured from ``INFORMATION_SCHEMA``. ``MissingField.UseNull`` keeps the
+    partition tolerant of dropped columns while still preventing newly
+    added source columns from silently appearing in the model.
+
+    Server / warehouse are emitted as ``<server>`` / ``<warehouse>``
+    placeholders so the generated TMDL parses; users wire them to a shared
+    expression or replace inline before publishing.
     """
+    column_list = _render_column_list(columns)
     m_expr = (
         "let\n"
-        f'    Source = Value.NativeQuery(Snowflake.Databases("<server>", "<warehouse>"){{[Name="{ref.database}"]}}[Data], '
-        f'"SELECT * FROM {ref.database}.{ref.schema}.{ref.table}", null, [EnableFolding=true])\n'
+        '    Source = Snowflake.Databases("<server>", "<warehouse>"),\n'
+        f'    Database = Source{{[Name="{ref.database}", Kind="Database"]}}[Data],\n'
+        f'    Schema = Database{{[Name="{ref.schema}", Kind="Schema"]}}[Data],\n'
+        f'    Table = Schema{{[Name="{ref.table}", Kind="Table"]}}[Data],\n'
+        f"    SelectedColumns = Table.SelectColumns(Table, {column_list}, MissingField.UseNull)\n"
         "in\n"
-        "    Source"
+        "    SelectedColumns"
     )
     lines = [f"{INDENT}partition {_quote(table_name)} = m"]
     lines.append(f"{INDENT * 2}mode: import")
@@ -112,7 +129,7 @@ def render_table_tmdl(
         lines.extend(_render_column(col, name))
 
     if include_partition:
-        lines.extend(_render_partition(ref, name))
+        lines.extend(_render_partition(ref, name, cols))
 
     # Ensure file ends with a single trailing newline.
     return "\n".join(lines).rstrip() + "\n"

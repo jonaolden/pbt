@@ -7,28 +7,105 @@ no primary key, foreign key, or constraint metadata is read.
 from __future__ import annotations
 
 import os
+from typing import Any, Optional
 
 from .ref import SnowflakeRef
 from .types import ColumnSchema
 
-_REQUIRED_ENV = ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD")
+
+_VALID_AUTHENTICATORS = ("externalbrowser", "snowflake", "snowflake_jwt")
 
 
-def _require_env() -> dict[str, str | None]:
-    missing = [k for k in _REQUIRED_ENV if not os.environ.get(k)]
-    if missing:
-        raise EnvironmentError(
-            "Missing required Snowflake environment variables: "
-            + ", ".join(missing)
-            + ". See .env.example."
+def _normalize_account(account: str) -> str:
+    """Strip the ``.snowflakecomputing.com`` suffix from an account locator.
+
+    Users frequently copy the full host (``myorg-myaccount.snowflakecomputing.com``)
+    from the Snowflake UI. The connector wants the bare locator.
+    """
+    if not account:
+        return account
+    account = account.strip()
+    suffix = ".snowflakecomputing.com"
+    lower = account.lower()
+    if lower.endswith(suffix):
+        account = account[: -len(suffix)]
+    return account
+
+
+def build_connection_params(
+    database: Optional[str] = None,
+    schema: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build Snowflake connection parameters from environment variables.
+
+    Auth method selection (``SNOWFLAKE_AUTHENTICATOR`` env var):
+
+    * ``externalbrowser`` — SSO via browser (default when no password/key is set)
+    * ``snowflake`` — username + password
+    * ``snowflake_jwt`` — key-pair (requires ``SNOWFLAKE_PRIVATE_KEY_FILE``)
+
+    If ``SNOWFLAKE_AUTHENTICATOR`` is not set, the method is inferred:
+
+    * ``snowflake`` when ``SNOWFLAKE_PASSWORD`` is set
+    * ``snowflake_jwt`` when ``SNOWFLAKE_PRIVATE_KEY_FILE`` is set
+    * ``externalbrowser`` otherwise
+    """
+    account = os.environ.get("SNOWFLAKE_ACCOUNT")
+    if not account:
+        raise RuntimeError(
+            "SNOWFLAKE_ACCOUNT environment variable is required. "
+            "Set it to your account locator (e.g. 'myorg-myaccount'). "
+            "See .env.example."
         )
-    return {
-        "account": os.environ["SNOWFLAKE_ACCOUNT"],
-        "user": os.environ["SNOWFLAKE_USER"],
-        "password": os.environ["SNOWFLAKE_PASSWORD"],
-        "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE"),
-        "role": os.environ.get("SNOWFLAKE_ROLE"),
+
+    user = os.environ.get("SNOWFLAKE_USER")
+    password = os.environ.get("SNOWFLAKE_PASSWORD")
+    private_key_file = os.environ.get("SNOWFLAKE_PRIVATE_KEY_FILE")
+    warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE")
+    role = os.environ.get("SNOWFLAKE_ROLE")
+
+    authenticator = os.environ.get("SNOWFLAKE_AUTHENTICATOR")
+    if authenticator:
+        authenticator = authenticator.strip().lower()
+        if authenticator not in _VALID_AUTHENTICATORS:
+            raise RuntimeError(
+                f"Invalid SNOWFLAKE_AUTHENTICATOR '{authenticator}'. "
+                f"Must be one of: {', '.join(_VALID_AUTHENTICATORS)}."
+            )
+    else:
+        if password:
+            authenticator = "snowflake"
+        elif private_key_file:
+            authenticator = "snowflake_jwt"
+        else:
+            authenticator = "externalbrowser"
+
+    if authenticator == "snowflake_jwt" and not private_key_file:
+        raise RuntimeError(
+            "SNOWFLAKE_AUTHENTICATOR=snowflake_jwt requires "
+            "SNOWFLAKE_PRIVATE_KEY_FILE to be set."
+        )
+
+    params: dict[str, Any] = {
+        "account": _normalize_account(account),
+        "authenticator": authenticator,
     }
+    if user:
+        params["user"] = user
+    if authenticator == "snowflake" and password:
+        params["password"] = password
+    if authenticator == "snowflake_jwt" and private_key_file:
+        params["private_key_file"] = private_key_file
+    if warehouse:
+        params["warehouse"] = warehouse
+    if role:
+        params["role"] = role
+    if database:
+        params["database"] = database
+    if schema:
+        params["schema"] = schema
+
+    return params
 
 
 _COLUMNS_QUERY = """
@@ -55,15 +132,10 @@ WHERE t.TABLE_SCHEMA = %(schema)s
 def fetch_columns(ref: SnowflakeRef) -> tuple[list[ColumnSchema], str | None]:
     """Connect to Snowflake and return columns + the table-level comment.
 
-    Snowflake credentials are read from environment variables:
-
-    * SNOWFLAKE_ACCOUNT (required)
-    * SNOWFLAKE_USER (required)
-    * SNOWFLAKE_PASSWORD (required)
-    * SNOWFLAKE_WAREHOUSE (optional)
-    * SNOWFLAKE_ROLE (optional)
+    Credentials and auth method come from environment variables — see
+    :func:`build_connection_params` for the full selection rules.
     """
-    creds = _require_env()
+    params = build_connection_params(database=ref.database, schema=ref.schema)
 
     try:
         import snowflake.connector  # type: ignore
@@ -73,25 +145,17 @@ def fetch_columns(ref: SnowflakeRef) -> tuple[list[ColumnSchema], str | None]:
             "Install it with: pip install snowflake-connector-python"
         ) from e
 
-    conn = snowflake.connector.connect(
-        account=creds["account"],
-        user=creds["user"],
-        password=creds["password"],
-        warehouse=creds["warehouse"],
-        role=creds["role"],
-        database=ref.database,
-        schema=ref.schema,
-    )
+    conn = snowflake.connector.connect(**params)
     try:
         cur = conn.cursor()
         try:
-            params = {"schema": ref.schema, "table": ref.table}
+            query_params = {"schema": ref.schema, "table": ref.table}
 
-            cur.execute(_TABLE_COMMENT_QUERY.format(database=ref.database), params)
+            cur.execute(_TABLE_COMMENT_QUERY.format(database=ref.database), query_params)
             row = cur.fetchone()
             table_comment = row[0] if row and row[0] else None
 
-            cur.execute(_COLUMNS_QUERY.format(database=ref.database), params)
+            cur.execute(_COLUMNS_QUERY.format(database=ref.database), query_params)
             rows = cur.fetchall()
         finally:
             cur.close()
