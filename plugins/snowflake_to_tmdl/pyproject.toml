@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snowflake-to-tmdl"
+version = "0.1.0"
+description = "Convert a Snowflake table reference into a Power BI TMDL table file. MVP pbt plugin."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+snowflake = ["snowflake-connector-python>=3.7"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+snowflake-to-tmdl = "snowflake_to_tmdl.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["snowflake_to_tmdl*"]

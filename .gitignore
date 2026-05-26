@@ -86,3 +86,10 @@ examples/**/target/
 tables/
 !examples/**/tables/
 projects/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
