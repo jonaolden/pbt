@@ -350,7 +350,7 @@ public static class ImportCommand
         Console.WriteLine();
 
         // Create the appropriate schema reader based on source type
-        ISchemaReader reader = sourceConfig.SourceType.ToLowerInvariant() switch
+        var reader = sourceConfig.SourceType.ToLowerInvariant() switch
         {
             "snowflake" => new SnowflakeSchemaReader(sourceConfig),
             _ => throw new InvalidOperationException(
@@ -362,13 +362,10 @@ public static class ImportCommand
         if (testConnection)
         {
             Console.WriteLine("Testing connection...");
-            if (reader is SnowflakeSchemaReader sfReader)
-            {
-                var info = sfReader.TestConnection();
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"✓ {info}");
-                Console.ResetColor();
-            }
+            var info = reader.TestConnection();
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"✓ {info}");
+            Console.ResetColor();
             return;
         }
 

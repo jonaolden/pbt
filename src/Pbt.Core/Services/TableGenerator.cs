@@ -9,24 +9,14 @@ namespace Pbt.Core.Services;
 public sealed class TableGenerator
 {
     private readonly ScaffoldConfig _config;
-    private readonly TypeMapper? _typeMapper;
-    private readonly SourceTypeMapper? _sourceTypeMapper;
+    private readonly SourceTypeMapper _sourceTypeMapper;
     private readonly NamingConverter _namingConverter;
     private readonly SourceTypeConfig? _sourceTypeConfig;
     private ColumnNamingGroup? _currentNamingGroup;
 
-    public TableGenerator(ScaffoldConfig config)
-    {
-        _config = config;
-        _typeMapper = new TypeMapper(config);
-        _sourceTypeMapper = null;
-        _namingConverter = new NamingConverter(config);
-    }
-
     public TableGenerator(ScaffoldConfig config, SourceTypeConfig sourceTypeConfig)
     {
         _config = config;
-        _typeMapper = null;
         _sourceTypeMapper = new SourceTypeMapper(sourceTypeConfig);
         _namingConverter = new NamingConverter(config);
         _sourceTypeConfig = sourceTypeConfig;
@@ -94,39 +84,15 @@ public sealed class TableGenerator
         {
             var columnName = GetColumnName(row.ColumnName);
 
-            ColumnDefinition column;
-
-            // Use SourceTypeMapper if available (dual type mapping)
-            if (_sourceTypeMapper != null)
+            var typeMapping = _sourceTypeMapper.MapType(row.DataType, row.ColumnName);
+            var column = new ColumnDefinition
             {
-                var typeMapping = _sourceTypeMapper.MapType(row.DataType, row.ColumnName);
-                column = new ColumnDefinition
-                {
-                    Name = columnName,
-                    Type = typeMapping.TmdlType,
-                    MType = typeMapping.MType,
-                    SourceColumn = row.ColumnName,  // Keep original column name for source mapping
-                    Description = row.ColumnComment
-                };
-            }
-            // Fall back to legacy TypeMapper
-            else if (_typeMapper != null)
-            {
-                var pbiType = _typeMapper.MapType(row.DataType, row.ColumnName);
-                var formatString = _typeMapper.GetFormatString(row.ColumnName);
-                column = new ColumnDefinition
-                {
-                    Name = columnName,
-                    Type = pbiType,
-                    SourceColumn = row.ColumnName,
-                    Description = row.ColumnComment,
-                    FormatString = formatString  // Legacy mapper still provides format strings
-                };
-            }
-            else
-            {
-                throw new InvalidOperationException("No type mapper configured");
-            }
+                Name = columnName,
+                Type = typeMapping.TmdlType,
+                MType = typeMapping.MType,
+                SourceColumn = row.ColumnName,  // Keep original column name for source mapping
+                Description = row.ColumnComment
+            };
 
             // Apply column naming rules from source config
             ApplyColumnNamingRules(column);

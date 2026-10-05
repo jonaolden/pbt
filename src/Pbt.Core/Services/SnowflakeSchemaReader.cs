@@ -8,7 +8,7 @@ namespace Pbt.Core.Services;
 /// Reads table and column metadata directly from Snowflake INFORMATION_SCHEMA.
 /// Returns CsvSchemaRow list to reuse the existing TableGenerator pipeline.
 /// </summary>
-public sealed class SnowflakeSchemaReader : ISchemaReader
+public sealed class SnowflakeSchemaReader
 {
     private readonly SourceTypeConfig _config;
 

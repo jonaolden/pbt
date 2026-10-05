@@ -582,9 +582,7 @@ public sealed class ModelComposer
         };
 
         // Parse cardinality
-        ParseCardinality(relDef.Cardinality, out var fromCardinality, out var toCardinality);
-        relationship.FromCardinality = fromCardinality;
-        relationship.ToCardinality = toCardinality;
+        (relationship.FromCardinality, relationship.ToCardinality) = ParseCardinality(relDef.Cardinality);
 
         // Parse cross filter direction
         if (!string.IsNullOrWhiteSpace(relDef.CrossFilterDirection))
@@ -723,29 +721,17 @@ public sealed class ModelComposer
     /// <summary>
     /// Parse cardinality string to TOM enums
     /// </summary>
-    private void ParseCardinality(string cardinality, out RelationshipEndCardinality from, out RelationshipEndCardinality to)
+    private static (RelationshipEndCardinality From, RelationshipEndCardinality To) ParseCardinality(string cardinality)
     {
-        switch (cardinality)
+        const RelationshipEndCardinality one = RelationshipEndCardinality.One, many = RelationshipEndCardinality.Many;
+        return cardinality switch
         {
-            case "ManyToOne":
-                from = RelationshipEndCardinality.Many;
-                to = RelationshipEndCardinality.One;
-                break;
-            case "OneToMany":
-                from = RelationshipEndCardinality.One;
-                to = RelationshipEndCardinality.Many;
-                break;
-            case "OneToOne":
-                from = RelationshipEndCardinality.One;
-                to = RelationshipEndCardinality.One;
-                break;
-            case "ManyToMany":
-                from = RelationshipEndCardinality.Many;
-                to = RelationshipEndCardinality.Many;
-                break;
-            default:
-                throw new ArgumentException($"Unknown cardinality: {cardinality}");
-        }
+            "ManyToOne" => (many, one),
+            "OneToMany" => (one, many),
+            "OneToOne" => (one, one),
+            "ManyToMany" => (many, many),
+            _ => throw new ArgumentException($"Unknown cardinality: {cardinality}")
+        };
     }
 
     /// <summary>
