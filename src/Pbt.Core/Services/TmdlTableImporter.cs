@@ -84,13 +84,13 @@ public sealed class TmdlTableImporter
         {
             throw new InvalidOperationException(
                 $"Failed to deserialize TMDL model from: {directoryPath}\n\n" +
-                $"Error: {ex.Message}", ex);
+                $"Error in '{ex.Document}' at line {ex.Line}: {ex.Message}\n  {ex.LineText}", ex);
         }
         catch (TmdlSerializationException ex)
         {
             throw new InvalidOperationException(
                 $"Failed to deserialize TMDL model from: {directoryPath}\n\n" +
-                $"Error: {ex.Message}", ex);
+                $"Error in '{ex.Document}' at line {ex.Line}: {ex.Message}", ex);
         }
 
         if (database.Model == null)

@@ -88,7 +88,7 @@ public static class PbipValidator
         }
         catch (TmdlFormatException ex)
         {
-            errors.Add($"TMDL syntax error in '{ex.Document}' at line {ex.Line}: {ex.Message}");
+            errors.Add($"TMDL syntax error in '{ex.Document}' at line {ex.Line}: {ex.Message} | {ex.LineText?.Trim()}");
         }
         catch (TmdlSerializationException ex)
         {
