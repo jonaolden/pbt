@@ -495,17 +495,8 @@ public static class ImportCommand
     private static void ReportUnsupportedObjects(Database database, string mode)
     {
         var unsupported = new List<string>();
-        if (database.Model.Perspectives.Count > 0)
-            unsupported.Add($"Perspectives: {database.Model.Perspectives.Count}");
-        if (database.Model.Roles.Count > 0)
-            unsupported.Add($"Roles: {database.Model.Roles.Count}");
-        foreach (var table in database.Model.Tables)
-        {
-            if (table.CalculationGroup != null)
-                unsupported.Add($"Calculation Group: {table.Name}");
-        }
-        if (database.Model.Cultures.Count > 0)
-            unsupported.Add($"Translations/Cultures: {database.Model.Cultures.Count}");
+        foreach (var table in database.Model.Tables.Where(t => t.Calendars.Count > 0))
+            unsupported.Add($"Calendars on table {table.Name}: {table.Calendars.Count}");
 
         if (unsupported.Count == 0) return;
 

@@ -164,3 +164,78 @@ columns:
         Assert.True(File.Exists(Path.Combine(outDir, "tables", "Fact.tmdl")));
     }
 }
+
+public class ImportRoundTripTests
+{
+    [Fact]
+    public void SampleProject_ComposeImportCompose_ProducesSameTmdl()
+    {
+        var root = AppContext.BaseDirectory;
+        while (root != null && !Directory.Exists(Path.Combine(root, "examples", "sample_project"))) root = Path.GetDirectoryName(root);
+        Assert.NotNull(root);
+        var project = Path.Combine(root!, "examples", "sample_project");
+
+        var serializer = new YamlSerializer();
+        var registry = new TableRegistry(serializer);
+        registry.LoadTables(Path.Combine(project, "tables"));
+        var modelDef = serializer.LoadFromFile<ModelDefinition>(Path.Combine(project, "models", "sales_model.yaml"));
+        var first = new ModelComposer(registry).ComposeModel(modelDef, projectRootPath: project);
+
+        // Import: TOM -> YAML on disk
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        Directory.CreateDirectory(Path.Combine(dir, "tables"));
+        foreach (var table in first.Model.Tables.Where(t => t.CalculationGroup == null))
+            serializer.SaveToFile(TomConverter.ToTableDefinition(table, includeLineageTags: true), Path.Combine(dir, "tables", table.Name + ".yaml"));
+        var importedModel = TomConverter.ToModelDefinition(first, includeLineageTags: true);
+        importedModel.Measures.Clear(); // measures already live on the tables
+
+        var registry2 = new TableRegistry(serializer);
+        registry2.LoadTables(Path.Combine(dir, "tables"));
+        var second = new ModelComposer(registry2).ComposeModel(importedModel, projectRootPath: dir);
+
+        var a = Path.Combine(dir, "a");
+        var b = Path.Combine(dir, "b");
+        TmdlSerializer.SerializeDatabaseToFolder(first, a);
+        TmdlSerializer.SerializeDatabaseToFolder(second, b);
+
+        foreach (var file in Directory.GetFiles(a, "*", SearchOption.AllDirectories))
+        {
+            var other = Path.Combine(b, Path.GetRelativePath(a, file));
+            Assert.True(File.Exists(other), $"missing after round trip: {Path.GetRelativePath(a, file)}");
+            // Table order in model.tmdl is not semantic (calc groups are listed last on import)
+            static string Normalize(string path) => Path.GetFileName(path) == "model.tmdl"
+                ? string.Join("\n", File.ReadAllLines(path).Order())
+                : File.ReadAllText(path);
+            Assert.Equal(Normalize(file), Normalize(other));
+        }
+    }
+}
+
+public class TomDiffTests
+{
+    [Fact]
+    public void Diff_ReportsPropertyChangesAndRemovedObjects()
+    {
+        var a = new Database("D") { CompatibilityLevel = 1702, Model = new Model() };
+        var t = new Table { Name = "T" };
+        t.Columns.Add(new DataColumn { Name = "A", DataType = DataType.String, SourceColumn = "A" });
+        t.Columns.Add(new DataColumn { Name = "B", DataType = DataType.Int64, SourceColumn = "B" });
+        t.Measures.Add(new Measure { Name = "M", Expression = "1" });
+        t.Partitions.Add(new Partition { Name = "P", Source = new MPartitionSource { Expression = "x" } });
+        a.Model.Tables.Add(t);
+
+        var b = a.Clone();
+        var tb = b.Model.Tables["T"];
+        tb.Columns["A"].DataType = DataType.Int64;
+        tb.Columns.Remove("B");
+        tb.Measures["M"].Expression = "2";
+        tb.Measures["M"].LineageTag = Guid.NewGuid().ToString(); // ignored
+
+        var changes = TomDiff.Diff(a, b);
+
+        Assert.Contains(changes, c => c.ChangeType == "property_changed" && c.ObjectPath.EndsWith("[A].dataType") && c.IsBreaking);
+        Assert.Contains(changes, c => c.ChangeType == "object_removed" && c.ObjectPath.EndsWith("[B]") && c.IsBreaking);
+        Assert.Contains(changes, c => c.ChangeType == "property_changed" && c.ObjectPath.EndsWith("[M].expression") && !c.IsBreaking);
+        Assert.DoesNotContain(changes, c => c.ObjectPath.Contains("lineageTag"));
+    }
+}

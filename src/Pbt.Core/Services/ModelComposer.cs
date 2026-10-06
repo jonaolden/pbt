@@ -341,7 +341,8 @@ public sealed class ModelComposer
         // Add columns
         foreach (var colDef in tableDef.Columns)
         {
-            var column = BuildColumn(colDef, tableDef.Name);
+            var column = BuildColumn(colDef, tableDef.Name,
+                calculatedTable: table.Partitions.Any(p => p.Source is CalculatedPartitionSource));
             table.Columns.Add(column);
         }
 
@@ -459,7 +460,7 @@ public sealed class ModelComposer
     /// Build a TOM Column from a column definition
     /// Returns either a DataColumn or CalculatedColumn based on whether Expression is set
     /// </summary>
-    private Column BuildColumn(ColumnDefinition colDef, string tableName)
+    private Column BuildColumn(ColumnDefinition colDef, string tableName, bool calculatedTable = false)
     {
         // If Expression is set, create a calculated column
         if (!string.IsNullOrWhiteSpace(colDef.Expression))
@@ -468,22 +469,22 @@ public sealed class ModelComposer
         }
 
         // Otherwise create a data column
-        return BuildDataColumn(colDef, tableName);
+        return BuildDataColumn(colDef, tableName, calculatedTable);
     }
 
     /// <summary>
     /// Build a TOM DataColumn from a column definition
     /// </summary>
-    private DataColumn BuildDataColumn(ColumnDefinition colDef, string tableName)
+    private Column BuildDataColumn(ColumnDefinition colDef, string tableName, bool calculatedTable = false)
     {
-        var column = new DataColumn
-        {
-            Name = colDef.Name,
-            DataType = ParseDataType(colDef.Type),
-            SourceColumn = colDef.SourceColumn ?? colDef.Name,
-            Description = colDef.Description,
-            IsHidden = colDef.IsHidden ?? false
-        };
+        // Columns of a calculated table take their values from the DAX result, not a source column
+        Column column = calculatedTable
+            ? new CalculatedTableColumn { SourceColumn = colDef.SourceColumn ?? colDef.Name }
+            : new DataColumn { SourceColumn = colDef.SourceColumn ?? colDef.Name };
+        column.Name = colDef.Name;
+        column.DataType = ParseDataType(colDef.Type);
+        column.Description = colDef.Description;
+        column.IsHidden = colDef.IsHidden ?? false;
 
         // Set display folder if specified
         if (!string.IsNullOrWhiteSpace(colDef.DisplayFolder))
