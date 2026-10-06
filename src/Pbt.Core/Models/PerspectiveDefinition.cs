@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Represents a perspective definition that scopes visibility for report audiences
 /// </summary>
-public class PerspectiveDefinition
+public class PerspectiveDefinition : MetadataDefinition
 {
     /// <summary>
     /// Perspective name

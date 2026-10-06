@@ -13,6 +13,8 @@ public sealed class ModelComposer
     private readonly TableRegistry _tableRegistry;
     private LineageManifestService? _lineageService;
     private ModelDefinition? _modelDef;
+    private Model? _currentModel;
+    private readonly List<(EntityPartitionSource Source, string Expression, string Context)> _pendingEntityLinks = new();
     private Dictionary<string, ConnectorConfig> _connectors = new();
 
     public ModelComposer(TableRegistry tableRegistry)
@@ -67,6 +69,9 @@ public sealed class ModelComposer
         };
 
         var model = database.Model;
+        _currentModel = model;
+        _pendingEntityLinks.Clear();
+        model.Description = modelDef.Description;
         model.Culture = modelDef.Culture;
         model.DiscourageImplicitMeasures = modelDef.DiscourageImplicitMeasures;
         model.DefaultPowerBIDataSourceVersion = Microsoft.AnalysisServices.Tabular.PowerBIDataSourceVersion.PowerBI_V3;
@@ -75,6 +80,8 @@ public sealed class ModelComposer
         // Data access options
         model.DataAccessOptions.LegacyRedirects = true;
         model.DataAccessOptions.ReturnErrorValuesAsNull = true;
+
+        ApplyMetadata(modelDef, model.Annotations.Add, model.ExtendedProperties.Add);
 
         // Disable auto time intelligence by default
         model.Annotations.Add(new Annotation
@@ -90,6 +97,10 @@ public sealed class ModelComposer
             Value = "[\"DevMode\"]"
         });
 
+        // 0. Add data sources (query partitions reference them)
+        foreach (var dsDef in modelDef.DataSources ?? new())
+            model.DataSources.Add(BuildDataSource(dsDef));
+
         // 1. Add tables
         foreach (var tableRef in modelDef.Tables)
         {
@@ -97,6 +108,8 @@ public sealed class ModelComposer
             var table = BuildTable(tableDef);
             model.Tables.Add(table);
         }
+
+        ResolveColumnReferences(model, modelDef.Tables.Select(t => _tableRegistry.GetTable(t.Ref)));
 
         // 2. Add relationships
         var relationshipCounter = new Dictionary<string, int>();
@@ -138,6 +151,13 @@ public sealed class ModelComposer
         // 5. Add shared expressions / Power Query parameters (from model and project)
         AddSharedExpressions(modelDef, model);
 
+        // 5a. Link Direct Lake entity partitions to their expression sources
+        foreach (var (source, expression, context) in _pendingEntityLinks)
+        {
+            source.ExpressionSource = model.Expressions.Find(expression)
+                ?? throw new InvalidOperationException($"{context} expression_source '{expression}' not found in model expressions");
+        }
+
         // 5b. Add RangeStart/RangeEnd expressions for tables with incremental refresh
         AddIncrementalRefreshExpressions(model);
 
@@ -161,6 +181,14 @@ public sealed class ModelComposer
             }
         }
 
+        // 7b. Add user-defined functions
+        foreach (var fnDef in modelDef.Functions ?? new())
+        {
+            var fn = new Function { Name = fnDef.Name, Expression = fnDef.Expression, Description = fnDef.Description, IsHidden = fnDef.IsHidden ?? false };
+            ApplyMetadata(fnDef, fn.Annotations.Add, fn.ExtendedProperties.Add);
+            model.Functions.Add(fn);
+        }
+
         // 8. Add perspectives
         if (modelDef.Perspectives != null)
         {
@@ -170,6 +198,10 @@ public sealed class ModelComposer
                 model.Perspectives.Add(perspective);
             }
         }
+
+        // 8b. Add cultures with translations
+        foreach (var cultureDef in modelDef.Cultures ?? new())
+            model.Cultures.Add(BuildCulture(cultureDef, model));
 
         // 9. Add roles with RLS
         if (modelDef.Roles != null)
@@ -185,6 +217,90 @@ public sealed class ModelComposer
     }
 
     /// <summary>
+    /// Build a partition; the source kind follows which fields are set (M, DAX, native query, Direct Lake entity)
+    /// </summary>
+    private Partition BuildPartition(PartitionDefinition partDef, TableDefinition tableDef)
+    {
+        var mExpr = ResolveMExpression(partDef.MExpression, partDef.MExpressionFile, tableDef.SourceFilePath);
+        var context = $"Partition '{partDef.Name}' in table '{tableDef.Name}'";
+
+        PartitionSource source;
+        if (!string.IsNullOrWhiteSpace(mExpr))
+            source = new MPartitionSource { Expression = mExpr };
+        else if (!string.IsNullOrWhiteSpace(partDef.CalculatedExpression))
+            source = new CalculatedPartitionSource { Expression = partDef.CalculatedExpression };
+        else if (!string.IsNullOrWhiteSpace(partDef.Query))
+            source = new QueryPartitionSource { Query = partDef.Query, DataSource = ResolveDataSource(partDef.DataSource, context) };
+        else if (!string.IsNullOrWhiteSpace(partDef.EntityName))
+        {
+            if (string.IsNullOrWhiteSpace(partDef.ExpressionSource))
+                throw new InvalidOperationException($"{context} uses entity_name and needs expression_source");
+            source = new EntityPartitionSource
+            {
+                EntityName = partDef.EntityName,
+                SchemaName = partDef.SchemaName
+            };
+            _pendingEntityLinks.Add(((EntityPartitionSource)source, partDef.ExpressionSource, context));
+        }
+        else
+            throw new InvalidOperationException($"{context} needs one of m_expression, m_expression_file, calculated_expression, query or entity_name");
+
+        var partition = new Partition { Name = partDef.Name, Description = partDef.Description, Source = source };
+        if (!string.IsNullOrWhiteSpace(partDef.Mode))
+            partition.Mode = ParsePartitionMode(partDef.Mode);
+        ApplyMetadata(partDef, partition.Annotations.Add, partition.ExtendedProperties.Add);
+        return partition;
+    }
+
+    private DataSource ResolveDataSource(string? name, string context) =>
+        string.IsNullOrWhiteSpace(name)
+            ? throw new InvalidOperationException($"{context} uses query and needs data_source")
+            : _currentModel?.DataSources.Find(name)
+                ?? throw new InvalidOperationException($"{context} data_source '{name}' not found");
+
+    private static DataSource BuildDataSource(DataSourceDefinition def)
+    {
+        DataSource ds;
+        if (!string.IsNullOrWhiteSpace(def.ConnectionString))
+        {
+            ds = new ProviderDataSource { Name = def.Name, ConnectionString = def.ConnectionString };
+            if (!string.IsNullOrWhiteSpace(def.Provider)) ((ProviderDataSource)ds).Provider = def.Provider;
+        }
+        else if (!string.IsNullOrWhiteSpace(def.Protocol))
+        {
+            var sds = new StructuredDataSource
+            {
+                Name = def.Name,
+                ConnectionDetails = new ConnectionDetails { Protocol = def.Protocol }
+            };
+            foreach (var (k, v) in def.Address ?? new()) sds.ConnectionDetails.Address[k] = v;
+            foreach (var (k, v) in def.Credential ?? new()) sds.Credential[k] = v;
+            ds = sds;
+        }
+        else
+            throw new InvalidOperationException($"Data source '{def.Name}' needs connection_string or protocol");
+
+        ds.Description = def.Description;
+        ApplyMetadata(def, ds.Annotations.Add, ds.ExtendedProperties.Add);
+        return ds;
+    }
+
+    private static void ApplyMetadata(MetadataDefinition def, Action<Annotation> addAnnotation, Action<ExtendedProperty> addExtended)
+    {
+        if (def.Annotations != null)
+            foreach (var (key, value) in def.Annotations)
+                addAnnotation(new Annotation { Name = key, Value = value });
+        if (def.ExtendedProperties != null)
+            foreach (var (key, value) in def.ExtendedProperties)
+                addExtended(new StringExtendedProperty { Name = key, Value = value });
+    }
+
+    private static T ParseEnum<T>(string value, string what) where T : struct, Enum =>
+        Enum.TryParse<T>(value, ignoreCase: true, out var result)
+            ? result
+            : throw new ArgumentException($"Unknown {what}: {value}. Valid values: {string.Join(", ", Enum.GetNames<T>())}");
+
+    /// <summary>
     /// Build a TOM Table from a table definition
     /// </summary>
     private Table BuildTable(TableDefinition tableDef)
@@ -196,48 +312,29 @@ public sealed class ModelComposer
             IsHidden = tableDef.IsHidden
         };
 
-        // Add partitions - multiple partition support for incremental refresh
+        // Add partitions - explicit list takes priority over single-partition shorthand
         if (tableDef.Partitions != null && tableDef.Partitions.Count > 0)
         {
-            // Explicit partitions list takes priority
             foreach (var partDef in tableDef.Partitions)
             {
-                var mExpr = ResolveMExpression(partDef.MExpression, partDef.MExpressionFile, tableDef.SourceFilePath);
-                if (!string.IsNullOrWhiteSpace(mExpr))
-                {
-                    var partition = new Partition
-                    {
-                        Name = partDef.Name,
-                        Source = new MPartitionSource { Expression = mExpr }
-                    };
-
-                    if (!string.IsNullOrWhiteSpace(partDef.Mode))
-                    {
-                        partition.Mode = ParsePartitionMode(partDef.Mode);
-                    }
-
-                    table.Partitions.Add(partition);
-                }
+                table.Partitions.Add(BuildPartition(partDef, tableDef));
             }
         }
         else
         {
-            // Single partition from MExpression, MExpressionFile, or Source (backward compat)
+            // Single partition from MExpression, MExpressionFile, CalculatedExpression, or Source
             var mExpression = ResolveMExpression(tableDef.MExpression, tableDef.MExpressionFile, tableDef.SourceFilePath);
 
-            if (string.IsNullOrWhiteSpace(mExpression) && tableDef.Source != null)
+            if (string.IsNullOrWhiteSpace(mExpression) && string.IsNullOrWhiteSpace(tableDef.CalculatedExpression) && tableDef.Source != null)
             {
                 mExpression = GenerateMExpressionFromSource(tableDef.Source, tableDef);
             }
 
-            if (!string.IsNullOrWhiteSpace(mExpression))
+            if (!string.IsNullOrWhiteSpace(mExpression) || !string.IsNullOrWhiteSpace(tableDef.CalculatedExpression))
             {
-                var partition = new Partition
-                {
-                    Name = tableDef.Name,
-                    Source = new MPartitionSource { Expression = mExpression }
-                };
-                table.Partitions.Add(partition);
+                table.Partitions.Add(BuildPartition(
+                    new PartitionDefinition { Name = tableDef.Name, MExpression = mExpression, CalculatedExpression = tableDef.CalculatedExpression },
+                    tableDef));
             }
         }
 
@@ -255,7 +352,12 @@ public sealed class ModelComposer
             {
                 var column = table.Columns.Find(colDef.Name);
                 var sortByColumn = table.Columns.Find(colDef.SortByColumn);
-                if (column != null && sortByColumn != null)
+                if (sortByColumn == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Column '{colDef.Name}' in table '{tableDef.Name}' sorts by '{colDef.SortByColumn}' which does not exist");
+                }
+                if (column != null)
                 {
                     column.SortByColumn = sortByColumn;
                 }
@@ -277,13 +379,13 @@ public sealed class ModelComposer
         }
 
         // Add table-level annotations
-        if (tableDef.Annotations != null)
-        {
-            foreach (var (key, value) in tableDef.Annotations)
-            {
-                table.Annotations.Add(new Annotation { Name = key, Value = value });
-            }
-        }
+        ApplyMetadata(tableDef, table.Annotations.Add, table.ExtendedProperties.Add);
+        if (!string.IsNullOrWhiteSpace(tableDef.DataCategory)) table.DataCategory = tableDef.DataCategory;
+        if (tableDef.IsPrivate.HasValue) table.IsPrivate = tableDef.IsPrivate.Value;
+        if (tableDef.ExcludeFromModelRefresh.HasValue) table.ExcludeFromModelRefresh = tableDef.ExcludeFromModelRefresh.Value;
+        if (tableDef.AlternateSourcePrecedence.HasValue) table.AlternateSourcePrecedence = tableDef.AlternateSourcePrecedence.Value;
+        if (!string.IsNullOrWhiteSpace(tableDef.DetailRowsExpression))
+            table.DefaultDetailRowsDefinition = new DetailRowsDefinition { Expression = tableDef.DetailRowsExpression };
 
         // Configure incremental refresh policy
         if (tableDef.IncrementalRefresh != null)
@@ -348,16 +450,10 @@ public sealed class ModelComposer
     /// <summary>
     /// Parse partition mode string to TOM ModeType
     /// </summary>
-    private ModeType ParsePartitionMode(string mode)
-    {
-        return mode switch
-        {
-            "Import" => ModeType.Import,
-            "DirectQuery" => ModeType.DirectQuery,
-            "Dual" => ModeType.Dual,
-            _ => throw new ArgumentException($"Unknown partition mode: {mode}. Valid values: Import, DirectQuery, Dual")
-        };
-    }
+    private ModeType ParsePartitionMode(string mode) =>
+        Enum.TryParse<ModeType>(mode, ignoreCase: true, out var m)
+            ? m
+            : throw new ArgumentException($"Unknown partition mode: {mode}. Valid values: {string.Join(", ", Enum.GetNames<ModeType>())}");
 
     /// <summary>
     /// Build a TOM Column from a column definition
@@ -425,14 +521,7 @@ public sealed class ModelComposer
             column.IsKey = true;
         }
 
-        // Add column annotations
-        if (colDef.Annotations != null)
-        {
-            foreach (var (key, value) in colDef.Annotations)
-            {
-                column.Annotations.Add(new Annotation { Name = key, Value = value });
-            }
-        }
+        ApplyCommonColumnProperties(column, colDef);
 
         // Generate lineage tag
         if (string.IsNullOrWhiteSpace(colDef.LineageTag))
@@ -492,13 +581,7 @@ public sealed class ModelComposer
             column.IsKey = true;
         }
 
-        if (colDef.Annotations != null)
-        {
-            foreach (var (key, value) in colDef.Annotations)
-            {
-                column.Annotations.Add(new Annotation { Name = key, Value = value });
-            }
-        }
+        ApplyCommonColumnProperties(column, colDef);
 
         if (string.IsNullOrWhiteSpace(colDef.LineageTag))
         {
@@ -510,6 +593,51 @@ public sealed class ModelComposer
         }
 
         return column;
+    }
+
+    private static void ApplyCommonColumnProperties(Column column, ColumnDefinition colDef)
+    {
+        ApplyMetadata(colDef, column.Annotations.Add, column.ExtendedProperties.Add);
+        if (colDef.IsNullable.HasValue) column.IsNullable = colDef.IsNullable.Value;
+        if (colDef.IsUnique.HasValue) column.IsUnique = colDef.IsUnique.Value;
+        if (!string.IsNullOrWhiteSpace(colDef.EncodingHint))
+            column.EncodingHint = ParseEnum<EncodingHintType>(colDef.EncodingHint, "encoding hint");
+    }
+
+    /// <summary>
+    /// Resolve alternate_of once every table and column exists
+    /// </summary>
+    private static void ResolveColumnReferences(Model model, IEnumerable<TableDefinition> tableDefs)
+    {
+        Column FindColumn(string reference, string ownerTable, string context)
+        {
+            var parts = reference.Split('.', 2);
+            var (tableName, colName) = parts.Length == 2 ? (parts[0], parts[1]) : (ownerTable, parts[0]);
+            return model.Tables.Find(tableName)?.Columns.Find(colName)
+                ?? throw new InvalidOperationException($"{context} references column '{reference}' which does not exist");
+        }
+
+        foreach (var tableDef in tableDefs)
+        {
+            foreach (var colDef in tableDef.Columns)
+            {
+                var column = model.Tables[tableDef.Name].Columns[colDef.Name];
+                var context = $"Column '{tableDef.Name}.{colDef.Name}'";
+
+                if (colDef.AlternateOf != null)
+                {
+                    var alt = new AlternateOf { Summarization = ParseEnum<SummarizationType>(colDef.AlternateOf.Summarization, "summarization") };
+                    if (!string.IsNullOrWhiteSpace(colDef.AlternateOf.BaseColumn))
+                        alt.BaseColumn = FindColumn(colDef.AlternateOf.BaseColumn, tableDef.Name, context);
+                    else if (!string.IsNullOrWhiteSpace(colDef.AlternateOf.BaseTable))
+                        alt.BaseTable = model.Tables.Find(colDef.AlternateOf.BaseTable)
+                            ?? throw new InvalidOperationException($"{context} alternate_of references table '{colDef.AlternateOf.BaseTable}' which does not exist");
+                    else
+                        throw new InvalidOperationException($"{context} alternate_of needs base_column or base_table");
+                    column.AlternateOf = alt;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -546,6 +674,8 @@ public sealed class ModelComposer
             };
             hierarchy.Levels.Add(level);
         }
+
+        ApplyMetadata(hierarchyDef, hierarchy.Annotations.Add, hierarchy.ExtendedProperties.Add);
 
         // Generate lineage tag
         if (string.IsNullOrWhiteSpace(hierarchyDef.LineageTag))
@@ -590,6 +720,12 @@ public sealed class ModelComposer
             relationship.CrossFilteringBehavior = ParseCrossFilterDirection(relDef.CrossFilterDirection);
         }
 
+        if (!string.IsNullOrWhiteSpace(relDef.SecurityFilteringBehavior))
+            relationship.SecurityFilteringBehavior = ParseEnum<SecurityFilteringBehavior>(relDef.SecurityFilteringBehavior, "security filtering behavior");
+        if (!string.IsNullOrWhiteSpace(relDef.JoinOnDateBehavior))
+            relationship.JoinOnDateBehavior = ParseEnum<DateTimeRelationshipBehavior>(relDef.JoinOnDateBehavior, "join on date behavior");
+        ApplyMetadata(relDef, relationship.Annotations.Add, relationship.ExtendedProperties.Add);
+
         // Set referential integrity for DirectQuery performance
         if (relDef.RelyOnReferentialIntegrity)
         {
@@ -625,9 +761,14 @@ public sealed class ModelComposer
             return _lineageService.GetOrGenerateRelationshipTag(relationshipKey);
         }
 
-        // Fallback to random GUID if no lineage service
-        return Guid.NewGuid().ToString();
+        return StableGuid($"Relationship|{relationshipKey}");
     }
+
+    /// <summary>
+    /// No manifest: derive a stable GUID from the object path so rebuilds stay deterministic
+    /// </summary>
+    private static string StableGuid(string key) =>
+        new Guid(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(key))).ToString();
 
     /// <summary>
     /// Build a TOM Measure from a measure definition
@@ -650,6 +791,26 @@ public sealed class ModelComposer
         if (!string.IsNullOrWhiteSpace(measureDef.DisplayFolder))
         {
             measure.DisplayFolder = measureDef.DisplayFolder;
+        }
+
+        ApplyMetadata(measureDef, measure.Annotations.Add, measure.ExtendedProperties.Add);
+        if (!string.IsNullOrWhiteSpace(measureDef.FormatStringExpression))
+            measure.FormatStringDefinition = new FormatStringDefinition { Expression = measureDef.FormatStringExpression };
+        if (!string.IsNullOrWhiteSpace(measureDef.DetailRowsExpression))
+            measure.DetailRowsDefinition = new DetailRowsDefinition { Expression = measureDef.DetailRowsExpression };
+        if (measureDef.Kpi is { } k)
+        {
+            var kpi = new KPI
+            {
+                Description = k.Description,
+                TargetExpression = k.TargetExpression,
+                TargetFormatString = k.TargetFormatString,
+                StatusExpression = k.StatusExpression,
+                StatusGraphic = k.StatusGraphic,
+                TrendExpression = k.TrendExpression,
+                TrendGraphic = k.TrendGraphic
+            };
+            measure.KPI = kpi;
         }
 
         // Generate lineage tag
@@ -704,19 +865,10 @@ public sealed class ModelComposer
     /// <summary>
     /// Parse data type string to TOM DataType
     /// </summary>
-    private DataType ParseDataType(string type)
-    {
-        return type.ToLowerInvariant() switch
-        {
-            "string" => DataType.String,
-            "int64" => DataType.Int64,
-            "datetime" => DataType.DateTime,
-            "decimal" => DataType.Decimal,
-            "double" => DataType.Double,
-            "boolean" => DataType.Boolean,
-            _ => throw new ArgumentException($"Unknown data type: {type}")
-        };
-    }
+    private DataType ParseDataType(string type) =>
+        Enum.TryParse<DataType>(type, ignoreCase: true, out var dt) && dt != DataType.Automatic && dt != DataType.Unknown
+            ? dt
+            : throw new ArgumentException($"Unknown data type: {type}");
 
     /// <summary>
     /// Parse cardinality string to TOM enums
@@ -762,12 +914,11 @@ public sealed class ModelComposer
                 "Column" => _lineageService.GetOrGenerateColumnTag(tableName, objectName),
                 "Measure" => _lineageService.GetOrGenerateMeasureTag(tableName, objectName),
                 "Hierarchy" => _lineageService.GetOrGenerateHierarchyTag(tableName, objectName),
-                _ => Guid.NewGuid().ToString()
+                _ => throw new ArgumentException($"Unknown lineage object type: {objectType}")
             };
         }
 
-        // Fallback to random GUID if no lineage service
-        return Guid.NewGuid().ToString();
+        return StableGuid($"{objectType}|{tableName}|{objectName}");
     }
 
     /// <summary>
@@ -817,7 +968,8 @@ public sealed class ModelComposer
             "month" => RefreshGranularityType.Month,
             "quarter" => RefreshGranularityType.Quarter,
             "year" => RefreshGranularityType.Year,
-            _ => RefreshGranularityType.Day
+            _ => throw new ArgumentException(
+                $"Unknown incremental refresh granularity: {config.Granularity}. Valid values: Day, Month, Quarter, Year")
         };
 
         var policy = new BasicRefreshPolicy
@@ -843,7 +995,7 @@ public sealed class ModelComposer
         table.Annotations.Add(new Annotation
         {
             Name = "PBI_IncrementalRefresh",
-            Value = $"{{\"dateColumn\":\"{config.DateColumn}\",\"granularity\":\"{config.Granularity}\"}}"
+            Value = System.Text.Json.JsonSerializer.Serialize(new { dateColumn = config.DateColumn, granularity = config.Granularity })
         });
     }
 
@@ -1023,7 +1175,7 @@ public sealed class ModelComposer
 
         var lineageTag = _lineageService != null
             ? _lineageService.GetOrGenerateRelationshipTag($"Connector:{connector.Name}")
-            : Guid.NewGuid().ToString();
+            : StableGuid($"Connector:{connector.Name}");
 
         var expression = new NamedExpression
         {
@@ -1138,7 +1290,7 @@ public sealed class ModelComposer
 
             var lineageTag = _lineageService != null
                 ? _lineageService.GetOrGenerateRelationshipTag($"Expression:{exprDef.Name}")
-                : Guid.NewGuid().ToString();
+                : StableGuid($"Expression:{exprDef.Name}");
 
             var namedExpression = new NamedExpression
             {
@@ -1195,6 +1347,11 @@ public sealed class ModelComposer
 
         // Set calculation group property
         table.CalculationGroup = new CalculationGroup();
+
+        if (!string.IsNullOrWhiteSpace(calcGroupDef.NoSelectionExpression))
+            table.CalculationGroup.NoSelectionExpression = new CalculationGroupExpression { Expression = calcGroupDef.NoSelectionExpression };
+        if (!string.IsNullOrWhiteSpace(calcGroupDef.MultipleOrEmptySelectionExpression))
+            table.CalculationGroup.MultipleOrEmptySelectionExpression = new CalculationGroupExpression { Expression = calcGroupDef.MultipleOrEmptySelectionExpression };
 
         if (calcGroupDef.Precedence.HasValue)
         {
@@ -1334,7 +1491,11 @@ public sealed class ModelComposer
         foreach (var tableName in perspectiveDef.Tables)
         {
             var table = model.Tables.Find(tableName);
-            if (table == null) continue;
+            if (table == null)
+            {
+                throw new InvalidOperationException(
+                    $"Perspective '{perspectiveDef.Name}' references table '{tableName}' which is not in the model");
+            }
 
             var perspectiveTable = new PerspectiveTable { Table = table };
 
@@ -1367,7 +1528,38 @@ public sealed class ModelComposer
             perspective.PerspectiveTables.Add(perspectiveTable);
         }
 
+        ApplyMetadata(perspectiveDef, perspective.Annotations.Add, perspective.ExtendedProperties.Add);
         return perspective;
+    }
+
+    private static Culture BuildCulture(CultureDefinition def, Model model)
+    {
+        var culture = new Culture { Name = def.Name };
+        ApplyMetadata(def, culture.Annotations.Add, culture.ExtendedProperties.Add);
+
+        foreach (var t in def.Translations)
+        {
+            var table = model.Tables.Find(t.Table)
+                ?? throw new InvalidOperationException($"Culture '{def.Name}' translation references table '{t.Table}' which is not in the model");
+            var context = $"Culture '{def.Name}' translation '{t.Table}.{t.Object}'";
+
+            MetadataObject target = table;
+            if (!string.IsNullOrWhiteSpace(t.Object))
+            {
+                target = (MetadataObject?)table.Columns.Find(t.Object)
+                    ?? (MetadataObject?)table.Measures.Find(t.Object)
+                    ?? (MetadataObject?)table.Hierarchies.Find(t.Object)
+                    ?? throw new InvalidOperationException($"{context} does not exist");
+            }
+
+            culture.ObjectTranslations.Add(new ObjectTranslation
+            {
+                Object = target,
+                Property = ParseEnum<TranslatedProperty>(t.Property, "translated property"),
+                Value = t.Value
+            });
+        }
+        return culture;
     }
 
     /// <summary>
@@ -1391,15 +1583,29 @@ public sealed class ModelComposer
                     $"Role '{roleDef.Name}' references table '{tablePerm.Table}' which is not in the model");
             }
 
-            var tablePermission = new TablePermission
+            var tablePermission = new TablePermission { Table = table };
+            if (!string.IsNullOrWhiteSpace(tablePerm.FilterExpression))
+                tablePermission.FilterExpression = tablePerm.FilterExpression;
+
+            if (tablePerm.ColumnPermissions != null)
             {
-                Table = table,
-                FilterExpression = tablePerm.FilterExpression
-            };
+                foreach (var (colName, permission) in tablePerm.ColumnPermissions)
+                {
+                    var col = table.Columns.Find(colName)
+                        ?? throw new InvalidOperationException(
+                            $"Role '{roleDef.Name}' column permission references column '{tablePerm.Table}.{colName}' which does not exist");
+                    tablePermission.ColumnPermissions.Add(new ColumnPermission
+                    {
+                        Column = col,
+                        MetadataPermission = ParseEnum<MetadataPermission>(permission, "column permission")
+                    });
+                }
+            }
 
             role.TablePermissions.Add(tablePermission);
         }
 
+        ApplyMetadata(roleDef, role.Annotations.Add, role.ExtendedProperties.Add);
         return role;
     }
 

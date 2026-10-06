@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Represents a table definition (from tables/*.yaml)
 /// </summary>
-public class TableDefinition
+public class TableDefinition : MetadataDefinition
 {
     /// <summary>
     /// Table name
@@ -27,6 +27,11 @@ public class TableDefinition
     /// Alternative to inline MExpression for better readability and syntax highlighting.
     /// </summary>
     public string? MExpressionFile { get; set; }
+
+    /// <summary>
+    /// DAX expression that makes this a calculated table (single-partition shorthand)
+    /// </summary>
+    public string? CalculatedExpression { get; set; }
 
     /// <summary>
     /// Multiple partitions for incremental refresh, mixed query modes, etc.
@@ -79,9 +84,29 @@ public class TableDefinition
     public List<string>? ExcludedColumns { get; set; }
 
     /// <summary>
-    /// Key-value annotations for tooling metadata and extended properties
+    /// Data category (e.g., "Time" for date tables)
     /// </summary>
-    public Dictionary<string, string>? Annotations { get; set; }
+    public string? DataCategory { get; set; }
+
+    /// <summary>
+    /// Hide the table from report authors' field list without hiding its fields
+    /// </summary>
+    public bool? IsPrivate { get; set; }
+
+    /// <summary>
+    /// Exclude the table from full model refresh
+    /// </summary>
+    public bool? ExcludeFromModelRefresh { get; set; }
+
+    /// <summary>
+    /// DAX expression returning the rows shown for "Show detail rows" on the table's measures
+    /// </summary>
+    public string? DetailRowsExpression { get; set; }
+
+    /// <summary>
+    /// Precedence used when several aggregation tables can answer a query (higher wins)
+    /// </summary>
+    public int? AlternateSourcePrecedence { get; set; }
 
     /// <summary>
     /// File path where this table definition was loaded from

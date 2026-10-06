@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Represents a DAX measure
 /// </summary>
-public class MeasureDefinition
+public class MeasureDefinition : MetadataDefinition
 {
     /// <summary>
     /// Measure name
@@ -44,4 +44,30 @@ public class MeasureDefinition
     /// Lineage tag (optional override, usually auto-generated)
     /// </summary>
     public string? LineageTag { get; set; }
+
+    /// <summary>
+    /// DAX expression for a dynamic format string (needs compatibility level 1601+)
+    /// </summary>
+    public string? FormatStringExpression { get; set; }
+
+    /// <summary>
+    /// DAX expression returning the rows shown for "Show detail rows"
+    /// </summary>
+    public string? DetailRowsExpression { get; set; }
+
+    /// <summary>
+    /// Key performance indicator definition
+    /// </summary>
+    public KpiDefinition? Kpi { get; set; }
+}
+
+public class KpiDefinition
+{
+    public string? Description { get; set; }
+    public string? TargetExpression { get; set; }
+    public string? TargetFormatString { get; set; }
+    public string? StatusExpression { get; set; }
+    public string? StatusGraphic { get; set; }
+    public string? TrendExpression { get; set; }
+    public string? TrendGraphic { get; set; }
 }

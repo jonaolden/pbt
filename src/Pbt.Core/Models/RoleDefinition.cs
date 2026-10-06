@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Represents a role with row-level security (RLS) definitions
 /// </summary>
-public class RoleDefinition
+public class RoleDefinition : MetadataDefinition
 {
     /// <summary>
     /// Role name
@@ -40,4 +40,9 @@ public class TablePermissionDefinition
     /// DAX filter expression for row-level security
     /// </summary>
     public string FilterExpression { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Object-level security: column name -> None, Read or Default
+    /// </summary>
+    public Dictionary<string, string>? ColumnPermissions { get; set; }
 }

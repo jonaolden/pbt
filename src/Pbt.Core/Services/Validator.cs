@@ -34,7 +34,7 @@ public sealed class Validator
 
     private static readonly HashSet<string> ValidPartitionModes = new(StringComparer.Ordinal)
     {
-        "Import", "DirectQuery", "Dual"
+        "Import", "DirectQuery", "Dual", "Default", "PushData", "DirectLake"
     };
 
     private const int MinCompatibilityLevel = 1200;
@@ -476,52 +476,30 @@ public sealed class Validator
     {
         var result = new ValidationResult();
 
-        try
+        if (database.Model == null)
         {
-            // TOM performs validation during serialization
-            // We'll attempt to serialize to a temporary in-memory structure
-            // If serialization succeeds, the model is valid
-
-            // Basic model structure validation
-            if (database.Model == null)
-            {
-                result.AddError("Database has no model", modelName);
-                return result;
-            }
-
-            // Validate each table has at least one partition or is a calculated table
-            foreach (var table in database.Model.Tables)
-            {
-                if (table.Partitions.Count == 0 && !IsCalculatedTable(table))
-                {
-                    result.AddWarning(
-                        $"Table '{table.Name}' has no partitions and no data source",
-                        modelName,
-                        context: "Table will be empty unless it's a calculated table",
-                        suggestion: "Add an M expression or source definition to load data");
-                }
-            }
-
-            // Check for relationship issues
-            foreach (var relationship in database.Model.Relationships)
-            {
-                if (relationship is SingleColumnRelationship scr)
-                {
-                    if (scr.FromColumn == null || scr.ToColumn == null)
-                    {
-                        result.AddError("Relationship has missing column reference", modelName);
-                    }
-                }
-            }
-
-            // If we get here without exceptions, TOM model is structurally valid
+            result.AddError("Database has no model", modelName);
             return result;
         }
-        catch (InvalidOperationException ex)
+
+        // Native TOM consistency check (references, names, compat-level requirements)
+        var tomValidation = database.Model.Validate();
+        foreach (var err in tomValidation.Errors)
+            result.AddError($"TOM: {err.ToString()}", modelName);
+
+        foreach (var table in database.Model.Tables)
         {
-            result.AddError($"TOM model validation failed: {ex.Message}", modelName);
-            return result;
+            if (table.Partitions.Count == 0 && !IsCalculatedTable(table))
+            {
+                result.AddWarning(
+                    $"Table '{table.Name}' has no partitions and no data source",
+                    modelName,
+                    context: "Table will be empty unless it's a calculated table",
+                    suggestion: "Add an M expression or source definition to load data");
+            }
         }
+
+        return result;
     }
 
     /// <summary>

@@ -5,7 +5,7 @@ namespace Pbt.Core.Models;
 /// Also carries project-level configuration (compatibility level, format strings, asset paths, build output)
 /// that was previously split into a separate project.yml file.
 /// </summary>
-public class ModelDefinition
+public class ModelDefinition : MetadataDefinition
 {
     /// <summary>
     /// Model name
@@ -107,6 +107,21 @@ public class ModelDefinition
     public List<RoleDefinition>? Roles { get; set; }
 
     /// <summary>
+    /// Provider/structured data sources referenced by query partitions (DirectQuery)
+    /// </summary>
+    public List<DataSourceDefinition>? DataSources { get; set; }
+
+    /// <summary>
+    /// DAX user-defined functions (needs a recent compatibility level)
+    /// </summary>
+    public List<FunctionDefinition>? Functions { get; set; }
+
+    /// <summary>
+    /// Cultures with translated captions, descriptions and display folders
+    /// </summary>
+    public List<CultureDefinition>? Cultures { get; set; }
+
+    /// <summary>
     /// Field parameters for dynamic axis switching
     /// </summary>
     public List<FieldParameterDefinition>? FieldParameters { get; set; }
@@ -115,4 +130,73 @@ public class ModelDefinition
     /// File path where this model definition was loaded from
     /// </summary>
     public string? SourceFilePath { get; set; }
+}
+
+/// <summary>
+/// A model data source. Set connection_string (provider data source) or protocol + address (structured).
+/// </summary>
+public class DataSourceDefinition : MetadataDefinition
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Provider data source: connection string
+    /// </summary>
+    public string? ConnectionString { get; set; }
+
+    /// <summary>
+    /// Provider data source: provider name (optional)
+    /// </summary>
+    public string? Provider { get; set; }
+
+    /// <summary>
+    /// Structured data source: protocol (e.g. "tds", "snowflake")
+    /// </summary>
+    public string? Protocol { get; set; }
+
+    /// <summary>
+    /// Structured data source: address keys (e.g. server, database)
+    /// </summary>
+    public Dictionary<string, string>? Address { get; set; }
+
+    /// <summary>
+    /// Structured data source: credential keys (e.g. AuthenticationKind, PrivacySetting)
+    /// </summary>
+    public Dictionary<string, string>? Credential { get; set; }
+}
+
+public class FunctionDefinition : MetadataDefinition
+{
+    public string Name { get; set; } = string.Empty;
+    public string Expression { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public bool? IsHidden { get; set; }
+}
+
+public class CultureDefinition : MetadataDefinition
+{
+    /// <summary>
+    /// Culture name (e.g. "sv-SE")
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
+
+    public List<TranslationDefinition> Translations { get; set; } = new();
+}
+
+public class TranslationDefinition
+{
+    public string Table { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Column, measure or hierarchy name in the table; omit to translate the table itself
+    /// </summary>
+    public string? Object { get; set; }
+
+    /// <summary>
+    /// Caption, Description or DisplayFolder
+    /// </summary>
+    public string Property { get; set; } = "Caption";
+
+    public string Value { get; set; } = string.Empty;
 }
