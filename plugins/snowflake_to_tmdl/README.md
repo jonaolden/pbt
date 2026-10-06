@@ -8,7 +8,7 @@ by querying only `INFORMATION_SCHEMA.COLUMNS`.
 
 In scope:
 
-- Parse a `DATABASE.SCHEMA.TABLE` ref.
+- Parse a `DATABASE.SCHEMA.TABLE` ref (or `DATABASE.SCHEMA` for all base tables).
 - Query column metadata from Snowflake `INFORMATION_SCHEMA`.
 - Map Snowflake data types to TMDL data types (mirrors `examples/snowflake.yaml`).
 - Emit a deterministic, valid Power BI table TMDL document.
@@ -18,7 +18,7 @@ Out of scope (per design):
 - Primary keys, foreign keys, constraints.
 - Relationship generation. Relationships are authored manually or
   produced separately by an LLM from user instructions.
-- Multi-table import, dbt parsing.
+- dbt parsing. Views (schema import covers base tables only).
 
 ## Install
 
@@ -68,12 +68,17 @@ snowflake-to-tmdl ANALYTICS_DB.PUBLIC.RESERVATIONS -o tables/Reservations.tmdl
 # Print to stdout (useful for piping or diffing)
 snowflake-to-tmdl ANALYTICS_DB.PUBLIC.RESERVATIONS -o -
 
+# Every base table in a schema -> ./tmdl/<TABLE>.tmdl
+snowflake-to-tmdl ANALYTICS_DB.PUBLIC -o tmdl/
+
 # Skip the M partition stub (columns only)
 snowflake-to-tmdl ANALYTICS_DB.PUBLIC.RESERVATIONS --no-partition
 
 # Rename the TMDL table (sourceColumn references keep the original names)
 snowflake-to-tmdl ANALYTICS_DB.PUBLIC.RESERVATIONS --table-name Reservations
 ```
+
+Then convert to pbt YAML: `pbt import table tmdl/ ./tables`.
 
 ## Library use
 

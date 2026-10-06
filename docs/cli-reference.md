@@ -240,7 +240,7 @@ pbt import model /path/to/model.tmdl my_yaml_project --unsupported-objects error
 
 ### pbt import table
 
-Import individual table definitions from TMDL or a CSV schema export.
+Import individual table definitions from TMDL.
 
 ```
 pbt import table <path> [<output-path>] [options]
@@ -250,15 +250,14 @@ pbt import table <path> [<output-path>] [options]
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `path` | _(required)_ | Path to a `.csv` file **or** a TMDL directory/file. The command detects the type by extension. |
+| `path` | _(required)_ | TMDL directory or `.tmdl` file. |
 | `output-path` | `./tables` | Directory where table YAML files are written. |
 
 **Options**
 
 | Option | Description |
 |--------|-------------|
-| `--source-config <path>` | Path to a source configuration YAML file. **Required for CSV imports.** Ignored for TMDL imports. |
-| `--include-lineage-tags` | Preserve original lineage tags. Applies to TMDL imports only; ignored for CSV. |
+| `--include-lineage-tags` | Preserve original lineage tags. |
 
 **Smart merge behaviour**
 
@@ -269,62 +268,19 @@ When a table YAML file already exists at the output path, the import merges rath
 - Removed columns are kept by default (safer than silent deletion)
 - Manual settings are preserved: `description`, `is_hidden`, `format_string`, `hierarchies`, `annotations`
 
-**CSV import**
-
-The CSV must be an `INFORMATION_SCHEMA.COLUMNS`-style export with at least `TABLE_NAME`, `COLUMN_NAME`, and `DATA_TYPE` columns (exact column names depend on the source config). A source configuration file is required:
-
-```bash
-pbt import table schema_export.csv --source-config snowflake_config.yaml
-pbt import table schema_export.csv --source-config snowflake_config.yaml ./my_tables
-```
-
-**TMDL import**
-
 ```bash
 pbt import table /path/to/model.tmdl
 pbt import table /path/to/model.tmdl ./my_tables
 pbt import table /path/to/model.tmdl --include-lineage-tags
 ```
 
-### pbt import source
-
-Import tables directly from a live data source (currently Snowflake) by querying `INFORMATION_SCHEMA` at build time.
-
-```
-pbt import source <source-config> [options]
-```
-
-**Arguments**
-
-| Argument | Description |
-|----------|-------------|
-| `source-config` | Path to a source configuration YAML file (e.g., `snowflake.yaml`). |
-
-**Options**
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--output <path>` | `./tables` | Directory where table YAML files are written. |
-| `--test` | false | Test the connection and exit without importing. |
-| `--dry-run` | false | Print the tables that would be imported without writing files. |
-
-The source config file specifies the connector, credentials (via environment variable references), which database/schema/tables to import, datatype mappings, and column naming rules. See `examples/snowflake.yaml` for a fully annotated example.
+**From a CSV schema export or Snowflake**: generate `.tmdl` with a standalone plugin, then import it.
 
 ```bash
-# Test connectivity
-pbt import source snowflake.yaml --test
-
-# Preview what would be imported
-pbt import source snowflake.yaml --dry-run
-
-# Import to default ./tables
-pbt import source snowflake.yaml
-
-# Import to a custom directory
-pbt import source snowflake.yaml --output ./warehouse_tables
+csv-to-tmdl schema_export.csv --source-type sqlserver -o tmdl/        # plugins/csv_to_tmdl
+snowflake-to-tmdl ANALYTICS_DB.PUBLIC -o tmdl/                        # plugins/snowflake_to_tmdl
+pbt import table tmdl/ ./tables
 ```
-
-**Supported sources**: Snowflake. For SQL Server and other sources, export an `INFORMATION_SCHEMA.COLUMNS` CSV and use `pbt import table` with a source config.
 
 ---
 

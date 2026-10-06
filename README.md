@@ -93,7 +93,7 @@ tables:
 | `pbt validate <path> [--strict]` | Check definitions without building |
 | `pbt list <path> [--details]` | Show tables, models, and lineage |
 | `pbt import model <tmdl-path>` | Import an existing TMDL model to YAML |
-| `pbt import table <path>` | Import tables from TMDL or CSV |
+| `pbt import table <path>` | Import tables from TMDL (CSV/Snowflake: see `plugins/`) |
 | `pbt lineage show/clean/reset <path>` | Manage lineage tag manifest |
 | `pbt diff <path-a> <path-b> [--breaking]` | Detect breaking schema changes |
 

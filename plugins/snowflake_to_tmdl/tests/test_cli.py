@@ -42,3 +42,13 @@ def test_cli_rejects_bad_ref(capsys):
     assert rc == 2
     err = capsys.readouterr().err
     assert "error:" in err
+
+
+def test_cli_whole_schema_writes_dir(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("snowflake_to_tmdl.snowflake_client.fetch_columns", _fake_fetch)
+    monkeypatch.setattr("snowflake_to_tmdl.snowflake_client.list_tables", lambda d, s: ["A", "B"])
+
+    rc = cli.main(["DB.SCH", "-o", str(tmp_path)])
+
+    assert rc == 0
+    assert sorted(p.name for p in tmp_path.glob("*.tmdl")) == ["A.tmdl", "B.tmdl"]

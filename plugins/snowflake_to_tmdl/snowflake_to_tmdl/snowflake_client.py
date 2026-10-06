@@ -129,14 +129,33 @@ WHERE t.TABLE_SCHEMA = %(schema)s
 """.strip()
 
 
-def fetch_columns(ref: SnowflakeRef) -> tuple[list[ColumnSchema], str | None]:
-    """Connect to Snowflake and return columns + the table-level comment.
+_TABLES_QUERY = """
+SELECT t.TABLE_NAME
+FROM {database}.INFORMATION_SCHEMA.TABLES t
+WHERE t.TABLE_SCHEMA = %(schema)s
+  AND t.TABLE_TYPE = 'BASE TABLE'
+ORDER BY t.TABLE_NAME
+""".strip()
 
-    Credentials and auth method come from environment variables — see
-    :func:`build_connection_params` for the full selection rules.
-    """
-    params = build_connection_params(database=ref.database, schema=ref.schema)
 
+def list_tables(database: str, schema: str) -> list[str]:
+    """Return the base-table names in ``database.schema`` (views excluded)."""
+    conn = _connect(build_connection_params(database=database, schema=schema))
+    try:
+        cur = conn.cursor()
+        try:
+            cur.execute(_TABLES_QUERY.format(database=database), {"schema": schema})
+            names = [r[0] for r in cur.fetchall()]
+        finally:
+            cur.close()
+    finally:
+        conn.close()
+    if not names:
+        raise LookupError(f"No tables found in {database}.{schema}.")
+    return names
+
+
+def _connect(params: dict[str, Any]):
     try:
         import snowflake.connector  # type: ignore
     except ImportError as e:
@@ -144,8 +163,16 @@ def fetch_columns(ref: SnowflakeRef) -> tuple[list[ColumnSchema], str | None]:
             "snowflake-connector-python is required to query Snowflake. "
             "Install it with: pip install snowflake-connector-python"
         ) from e
+    return snowflake.connector.connect(**params)
 
-    conn = snowflake.connector.connect(**params)
+
+def fetch_columns(ref: SnowflakeRef) -> tuple[list[ColumnSchema], str | None]:
+    """Connect to Snowflake and return columns + the table-level comment.
+
+    Credentials and auth method come from environment variables — see
+    :func:`build_connection_params` for the full selection rules.
+    """
+    conn = _connect(build_connection_params(database=ref.database, schema=ref.schema))
     try:
         cur = conn.cursor()
         try:
