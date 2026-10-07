@@ -93,7 +93,7 @@ tables:
 | `pbt validate <path> [--strict]` | Check definitions without building |
 | `pbt list <path> [--details]` | Show tables, models, and lineage |
 | `pbt import model <tmdl-path>` | Import an existing TMDL model to YAML |
-| `pbt import table <path>` | Import tables from TMDL (CSV/Snowflake: see `plugins/`) |
+| `pbt import table <path>` | Import tables from TMDL (CSV/Snowflake: `pbt generate-tables`) |
 | `pbt lineage show/clean/reset <path>` | Manage lineage tag manifest |
 | `pbt diff <path-a> <path-b> [--breaking]` | Detect breaking schema changes |
 | `pbt generate-tables [--config pbt.yml] [--dry-run]` | Generate `tables/*.yaml` from `table_name/source/target` entries in `pbt.yml` (columns fetched from Snowflake) |

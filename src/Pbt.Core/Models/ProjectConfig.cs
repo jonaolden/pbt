@@ -29,6 +29,11 @@ public class SourceConnectionConfig
     /// Literal connection string (no secrets; ${VAR} is not resolved here)
     /// </summary>
     public string? Connection { get; set; }
+
+    /// <summary>
+    /// M-generation source type for adapters that cannot infer it (csv): snowflake (default) or sqlserver
+    /// </summary>
+    public string? Type { get; set; }
 }
 
 public class TableGenSpec

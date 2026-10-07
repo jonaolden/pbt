@@ -274,13 +274,7 @@ pbt import table /path/to/model.tmdl ./my_tables
 pbt import table /path/to/model.tmdl --include-lineage-tags
 ```
 
-**From a CSV schema export or Snowflake**: generate `.tmdl` with a standalone plugin, then import it.
-
-```bash
-csv-to-tmdl schema_export.csv --source-type sqlserver -o tmdl/        # plugins/csv_to_tmdl
-snowflake-to-tmdl ANALYTICS_DB.PUBLIC -o tmdl/                        # plugins/snowflake_to_tmdl
-pbt import table tmdl/ ./tables
-```
+**From Snowflake or a CSV schema export**: use `pbt generate-tables` (see below); it writes `tables/*.yaml` directly.
 
 ---
 
@@ -433,11 +427,16 @@ tables:
   - table_name: Property
     source: snowflake
     target: db.schema.table        # unquoted parts fold to UPPER; "Quoted" keeps case
+  - table_name: Room
+    source: csv
+    target: exports/schema.csv#ROOMS   # path (relative to cwd) # TABLE_NAME
 ```
+
+For `csv`, add `sources.csv` with `connector:` (and `type: snowflake|sqlserver`, default `snowflake`, for M generation). CSV headers (case-insensitive): required `table_name`, `column_name`, `data_type`; optional `ordinal_position`, `table_comment`, `column_comment`, `table_catalog`, `table_schema`.
 
 **Behaviour**
 
-- Snowflake metadata comes from `plugins/snowflake_to_tmdl` (`python -m snowflake_to_tmdl`; set `PBT_PYTHON` to pick the interpreter). Credentials are read from that plugin's env vars (`SNOWFLAKE_ACCOUNT`, ...), never from or into project files.
+- Snowflake metadata is read in-process with the .NET `Snowflake.Data` connector (no Python). Credentials come from env vars (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD` / `SNOWFLAKE_PRIVATE_KEY_FILE` / `SNOWFLAKE_AUTHENTICATOR`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_ROLE`), never from or into project files.
 - `pbt.yml` only selects which tables to retrieve (`table_name`, `source`, `target`). There are no modeling options: column names, types, keys, hidden flags, formats, measures and so on are edited in the generated `tables/<name>.yaml`. Unknown keys in `pbt.yml` are rejected.
 - Re-runs merge into the existing table file: manual edits (measures, hierarchies, descriptions, column properties) are kept; new source columns are added; unchanged files are not rewritten. An unreadable existing file is an error, never overwritten.
 

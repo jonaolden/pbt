@@ -133,7 +133,7 @@ public static class ImportCommand
 
     private static Command CreateTableSubcommand()
     {
-        var pathArgument = new Argument<string>("path", "Path to TMDL folder/file (generate .tmdl from CSV/Snowflake with the plugins in plugins/)");
+        var pathArgument = new Argument<string>("path", "Path to TMDL folder/file");
         var outputPathArgument = new Argument<string>("output-path", () => "./tables", "Path where table YAML files will be created");
         var includeLineageTagsOption = new Option<bool>("--include-lineage-tags", "Preserve original lineage tags");
 
@@ -149,7 +149,7 @@ public static class ImportCommand
                 if (!IsTmdlPath(path))
                     throw new InvalidOperationException(
                         $"Not a TMDL directory or .tmdl file: {path}\n" +
-                        "To start from a CSV schema or Snowflake, generate .tmdl with plugins/csv_to_tmdl or plugins/snowflake_to_tmdl.");
+                        "To start from a CSV schema or Snowflake, use `pbt generate-tables`.");
 
                 ExecuteTableImportTmdl(path, outputPath, includeLineageTags);
             }

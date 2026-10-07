@@ -192,23 +192,59 @@ public class TableGeneratorTests : IDisposable
     }
 
     [Fact]
-    public void SnowflakeAdapter_ImportsPluginTmdl_WithStubbedPlugin()
+    public void SnowflakeAdapter_UsesParsedTarget()
     {
         string? calledWith = null;
-        var adapter = new SnowflakeAdapter((refText, outFile) =>
+        var adapter = new SnowflakeAdapter((db, schema, table) =>
         {
-            calledWith = refText;
-            File.WriteAllText(outFile,
-                "table TBL\n\tcolumn ID\n\t\tdataType: int64\n\t\tsourceColumn: ID\n\n\tcolumn NAME\n\t\tdataType: string\n\t\tsourceColumn: NAME\n");
-            return (0, "");
+            calledWith = $"{db}.{schema}.{table}";
+            return new TableDefinition { Name = table };
         });
 
-        var meta = adapter.GetTableMetadata("db.\"Sch\".tbl");
+        adapter.GetTableMetadata("db.\"Sch\".tbl");
 
         Assert.Equal("DB.Sch.TBL", calledWith);
+    }
+
+    [Theory]
+    [InlineData("NUMBER", "Int64")]
+    [InlineData("NUMBER(10,2)", "Int64")]
+    [InlineData("NUMERIC", "Decimal")]
+    [InlineData("TIMESTAMP_NTZ", "DateTime")]
+    [InlineData("VARIANT", "String")]
+    public void SnowflakeMetadata_MapsTypes(string sf, string tmdl) => Assert.Equal(tmdl, SourceTypes.ToTmdl(sf));
+
+    [Fact]
+    public void SnowflakeMetadata_InfersAuthFromEnv()
+    {
+        var env = new Dictionary<string, string> { ["SNOWFLAKE_ACCOUNT"] = "org-acct.snowflakecomputing.com", ["SNOWFLAKE_PASSWORD"] = "pw" };
+        var cs = SnowflakeMetadata.BuildConnectionString("DB", "SCH", k => env.GetValueOrDefault(k));
+
+        Assert.Contains("account=org-acct;", cs);
+        Assert.Contains("authenticator=snowflake;", cs);
+        Assert.Throws<InvalidOperationException>(() => SnowflakeMetadata.BuildConnectionString("DB", "SCH", _ => null));
+    }
+
+    [Fact]
+    public void CsvAdapter_ReadsColumnsInOrdinalOrder()
+    {
+        var csv = Path.Combine(_dir, "schema.csv");
+        File.WriteAllText(csv,
+            "\uFEFFTABLE_CATALOG,TABLE_SCHEMA,TABLE_NAME,COLUMN_NAME,DATA_TYPE,ORDINAL_POSITION,COLUMN_COMMENT\n" +
+            "DB,PUB,ROOMS,NAME,VARCHAR,2,\"has, comma\"\n" +
+            "DB,PUB,ROOMS,ID,NUMBER,1,\n" +
+            "DB,PUB,OTHER,X,INT,1,\n");
+        var adapter = new CsvAdapter();
+        var target = csv + "#rooms";
+
+        var meta = adapter.GetTableMetadata(target);
+        var src = adapter.ToSource(target, new SourceConnectionConfig { Connector = "C" });
+
         Assert.Equal(new[] { "ID", "NAME" }, meta.Columns.Select(c => c.Name));
-        Assert.Equal("int64", meta.Columns[0].Type.ToLowerInvariant());
-        Assert.Throws<InvalidOperationException>(() =>
-            new SnowflakeAdapter((_, _) => (1, "boom")).GetTableMetadata("a.b.c"));
+        Assert.Equal("Int64", meta.Columns[0].Type);
+        Assert.Equal("has, comma", meta.Columns[1].Description);
+        Assert.Equal(("DB", "PUB", "ROOMS"), (src.Database, src.Schema, src.Table));
+        Assert.NotNull(adapter.ValidateTarget("no-hash.csv"));
+        Assert.Throws<InvalidOperationException>(() => adapter.GetTableMetadata(csv + "#NOPE"));
     }
 }

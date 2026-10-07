@@ -21,7 +21,7 @@ public sealed class TableGenerator
 
     public TableGenerator(Dictionary<string, ISourceAdapter>? adapters = null)
     {
-        _adapters = adapters ?? new(StringComparer.OrdinalIgnoreCase) { ["snowflake"] = new SnowflakeAdapter() };
+        _adapters = adapters ?? new(StringComparer.OrdinalIgnoreCase) { ["snowflake"] = new SnowflakeAdapter(), ["csv"] = new CsvAdapter() };
     }
 
     /// <summary>Offline validation. Returns one error (or null) per spec, same order as config.Tables.</summary>
