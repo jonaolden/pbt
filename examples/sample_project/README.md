@@ -17,6 +17,9 @@ sample_project/
 │   └── validate_naming.py    # Enforce PascalCase naming conventions
 ├── environments/        # Named environment overrides (optional)
 │   └── dev.env.yml      # Development connection string overrides
+├── pbt.yml              # Dummy Snowflake table declarations for `pbt generate-tables`
+├── snowflake_config.yaml # Shared Snowflake connector (SnowflakeSource)
+├── .env.example         # Dummy Snowflake credentials (copy to .env)
 ├── target/              # Generated TMDL/PBIP output (created by build)
 └── .pbt/                # Lineage tag manifest (auto-generated)
 ```
@@ -79,6 +82,10 @@ pbt build . --pre-hook "python3 ./scripts/validate_naming.py"
 ### environments/
 
 - **dev.env.yml** — Overrides `ServerName` and `DatabaseName` expressions for the development environment. Use with `pbt build --env dev`.
+
+### Snowflake (dummy configuration)
+
+`pbt.yml`, `snowflake_config.yaml` and `.env.example` show a complete Snowflake setup. `snowflake_config.yaml` becomes the shared `SnowflakeSource` expression on every `pbt build`. `pbt.yml` declares three tables under `ANALYTICS_DB.PUBLIC`, which does not exist, so `pbt generate-tables` needs real credentials and targets before it can run. `pbt validate-tables --config pbt.yml` works offline.
 
 ## Usage
 

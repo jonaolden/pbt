@@ -1,0 +1,10 @@
+# Shared Snowflake connector. pbt build adds it to the model as the shared
+# expression `SnowflakeSource`, which tables generated from pbt.yml reference.
+# ${VAR} values are read from the environment at build time (see .env.example).
+source_type: snowflake
+
+connector:
+  name: SnowflakeSource
+  connection: ${SNOWFLAKE_ACCOUNT}
+  warehouse: ${SNOWFLAKE_WAREHOUSE}
+  implementation: "2.0"
