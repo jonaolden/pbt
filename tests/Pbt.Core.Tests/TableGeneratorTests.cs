@@ -94,6 +94,22 @@ public class TableGeneratorTests : IDisposable
     }
 
     [Fact]
+    public void Generate_KeepsSourceColumnOrderAndConnector()
+    {
+        Gen().Generate(Config(Spec()), _dir, false);
+        var t = _yaml.LoadFromFile<TableDefinition>(TablePath());
+        Assert.Equal(new[] { "PROPERTY_ID", "NAME", "INTERNAL_CODE", "CREATED_AT" }, t.Columns.Select(c => c.Name));
+        Assert.Equal("SnowflakeSource", t.Source!.Connector);
+    }
+
+    [Fact]
+    public void Config_RejectsModelingKeys()
+    {
+        const string yaml = "tables:\n  - table_name: A\n    source: snowflake\n    target: a.b.c\n    column_overrides: {}\n";
+        Assert.ThrowsAny<Exception>(() => _yaml.Deserialize<ProjectConfig>(yaml));
+    }
+
+    [Fact]
     public void Generate_DryRun_WritesNothing()
     {
         var r = Gen().Generate(Config(Spec()), _dir, true);
@@ -109,38 +125,6 @@ public class TableGeneratorTests : IDisposable
         Assert.Contains("table not found", r.Tables[0].Error);
         Assert.Equal("created", r.Tables[1].Status);
         Assert.False(File.Exists(TablePath("bad")));
-    }
-
-    [Fact]
-    public void Generate_AppliesOverrides_ColumnOrderKept()
-    {
-        var spec = Spec();
-        spec.Options = new() { Hidden = true, Mode = "import" };
-        spec.ColumnOverrides = new()
-        {
-            ["property_id"] = new() { Name = "PropertyId", DataType = "Int64", IsKey = true },
-            ["INTERNAL_CODE"] = new() { IsHidden = true },
-            ["CREATED_AT"] = new() { FormatString = "yyyy-mm-dd" }
-        };
-        Gen().Generate(Config(spec), _dir, false);
-        var t = _yaml.LoadFromFile<TableDefinition>(TablePath());
-
-        Assert.True(t.IsHidden);
-        Assert.Equal(new[] { "PropertyId", "NAME", "INTERNAL_CODE", "CREATED_AT" }, t.Columns.Select(c => c.Name));
-        Assert.True(t.Columns[0].IsKey);
-        Assert.True(t.Columns[2].IsHidden);
-        Assert.Equal("yyyy-mm-dd", t.Columns[3].FormatString);
-        Assert.Equal("SnowflakeSource", t.Source!.Connector);
-    }
-
-    [Fact]
-    public void Generate_UnknownOverrideColumn_Errors()
-    {
-        var spec = Spec();
-        spec.ColumnOverrides = new() { ["NOPE"] = new() { IsHidden = true } };
-        var r = Gen().Generate(Config(spec), _dir, false);
-        Assert.Equal("error", r.Tables[0].Status);
-        Assert.False(File.Exists(TablePath()));
     }
 
     [Fact]

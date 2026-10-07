@@ -36,33 +36,4 @@ public class TableGenSpec
     public string TableName { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string Target { get; set; } = string.Empty;
-    public TableGenOptions? Options { get; set; }
-
-    /// <summary>
-    /// Overrides keyed by source column name (case-insensitive)
-    /// </summary>
-    public Dictionary<string, ColumnGenOverride>? ColumnOverrides { get; set; }
-}
-
-public class TableGenOptions
-{
-    /// <summary>
-    /// Partition mode; only "import" is supported
-    /// </summary>
-    public string? Mode { get; set; }
-    public bool? Hidden { get; set; }
-
-    /// <summary>
-    /// Auto date/time is a model-level setting (model YAML <c>auto_time_intelligence</c>); only <c>true</c> (= off, the default) is accepted
-    /// </summary>
-    public bool? DisableAutoDateTime { get; set; }
-}
-
-public class ColumnGenOverride
-{
-    public string? Name { get; set; }
-    public string? DataType { get; set; }
-    public bool? IsKey { get; set; }
-    public bool? IsHidden { get; set; }
-    public string? FormatString { get; set; }
 }

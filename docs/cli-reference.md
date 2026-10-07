@@ -433,18 +433,13 @@ tables:
   - table_name: Property
     source: snowflake
     target: db.schema.table        # unquoted parts fold to UPPER; "Quoted" keeps case
-    options: { hidden: false, mode: import }
-    column_overrides:              # keyed by source column
-      PROPERTY_ID: { name: PropertyId, is_key: true }
-      INTERNAL_CODE: { is_hidden: true }
-      CREATED_AT: { data_type: DateTime, format_string: "yyyy-mm-dd" }
 ```
 
 **Behaviour**
 
 - Snowflake metadata comes from `plugins/snowflake_to_tmdl` (`python -m snowflake_to_tmdl`; set `PBT_PYTHON` to pick the interpreter). Credentials are read from that plugin's env vars (`SNOWFLAKE_ACCOUNT`, ...), never from or into project files.
-- Re-runs merge into the existing table file: manual measures, hierarchies, descriptions and other table properties are kept; unchanged files are not rewritten. An unreadable existing file is an error, never overwritten. `column_overrides` always win.
-- `options.mode` supports only `import`. `disable_auto_date_time: true` is accepted (it is the default); the real setting is model-level (`auto_time_intelligence`).
+- `pbt.yml` only selects which tables to retrieve (`table_name`, `source`, `target`). There are no modeling options: column names, types, keys, hidden flags, formats, measures and so on are edited in the generated `tables/<name>.yaml`. Unknown keys in `pbt.yml` are rejected.
+- Re-runs merge into the existing table file: manual edits (measures, hierarchies, descriptions, column properties) are kept; new source columns are added; unchanged files are not rewritten. An unreadable existing file is an error, never overwritten.
 
 **Example**
 
@@ -457,7 +452,7 @@ pbt generate-tables --config ./pbt.yml
 
 ## validate-tables
 
-Check `pbt.yml` table definitions offline (no source lookup): required fields, duplicate `table_name`, configured source, target component count, unsupported options.
+Check `pbt.yml` table definitions offline (no source lookup): required fields, duplicate `table_name`, configured source, target component count.
 
 ```
 pbt validate-tables [options]

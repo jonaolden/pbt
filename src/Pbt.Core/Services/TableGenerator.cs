@@ -46,10 +46,6 @@ public sealed class TableGenerator
         if (conn.Connection?.Contains("${") == true)
             return $"{at} ({t.TableName}): sources.{t.Source}.connection cannot use ${{VAR}}; use 'connector' with a shared expression.";
         if (adapter.ValidateTarget(t.Target) is { } targetError) return $"{at} ({t.TableName}): {targetError}";
-        if (t.Options?.Mode is { } mode && !mode.Equals("import", StringComparison.OrdinalIgnoreCase))
-            return $"{at} ({t.TableName}): options.mode '{mode}' not supported (only 'import').";
-        if (t.Options?.DisableAutoDateTime == false)
-            return $"{at} ({t.TableName}): disable_auto_date_time is model-level; set auto_time_intelligence in the model YAML.";
         return null;
     }
 
@@ -101,9 +97,6 @@ public sealed class TableGenerator
             table = existing;
         }
 
-        if (spec.Options?.Hidden is { } hidden) table.IsHidden = hidden;
-        ApplyOverrides(table, spec);
-
         var yaml = _yaml.Serialize(table);
         var status = existing == null ? "created" : File.ReadAllText(path) == yaml ? "unchanged" : "updated";
         if (!dryRun && status != "unchanged")
@@ -112,20 +105,6 @@ public sealed class TableGenerator
             File.WriteAllText(path, yaml);
         }
         return status;
-    }
-
-    private static void ApplyOverrides(TableDefinition table, TableGenSpec spec)
-    {
-        foreach (var (key, o) in spec.ColumnOverrides ?? new())
-        {
-            var col = table.Columns.FirstOrDefault(c => string.Equals(c.SourceColumn ?? c.Name, key, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException($"column_overrides: no source column '{key}' in {spec.Target}.");
-            col.Name = o.Name ?? col.Name;
-            col.Type = o.DataType ?? col.Type;
-            col.IsKey = o.IsKey ?? col.IsKey;
-            col.IsHidden = o.IsHidden ?? col.IsHidden;
-            col.FormatString = o.FormatString ?? col.FormatString;
-        }
     }
 
     private List<string> AddRefs(ProjectConfig config, string configDir, IEnumerable<string> tables, bool dryRun)
