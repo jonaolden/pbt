@@ -96,11 +96,13 @@ public sealed class SnowflakeAdapter : ISourceAdapter
 /// <summary>INFORMATION_SCHEMA reader. Only COLUMNS (plus TABLES for the comment); no PK/FK metadata.</summary>
 public static class SnowflakeMetadata
 {
-    private static readonly string[] Authenticators = { "externalbrowser", "snowflake", "snowflake_jwt" };
+    private static readonly string[] Authenticators = { "externalbrowser", "snowflake", "snowflake_jwt", "username_password_mfa", "oauth", "programmatic_access_token", "workload_identity" };
 
     /// <summary>
     /// Auth comes from SNOWFLAKE_AUTHENTICATOR, else inferred: password -> snowflake,
-    /// SNOWFLAKE_PRIVATE_KEY_FILE -> snowflake_jwt, otherwise externalbrowser (SSO).
+    /// SNOWFLAKE_PRIVATE_KEY_FILE -> snowflake_jwt, SNOWFLAKE_TOKEN -> oauth, otherwise externalbrowser (SSO).
+    /// Other values: username_password_mfa (password + SNOWFLAKE_PASSCODE, or push), programmatic_access_token
+    /// (SNOWFLAKE_TOKEN), workload_identity (cloud-provided identity; no secrets).
     /// </summary>
     public static string BuildConnectionString(string database, string schema, Func<string, string?> env)
     {
@@ -113,14 +115,21 @@ public static class SnowflakeMetadata
 
         var password = env("SNOWFLAKE_PASSWORD");
         var keyFile = env("SNOWFLAKE_PRIVATE_KEY_FILE");
+        var token = env("SNOWFLAKE_TOKEN");
         var auth = env("SNOWFLAKE_AUTHENTICATOR")?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(auth))
-            auth = !string.IsNullOrEmpty(password) ? "snowflake" : !string.IsNullOrEmpty(keyFile) ? "snowflake_jwt" : "externalbrowser";
+            auth = !string.IsNullOrEmpty(password) ? "snowflake" : !string.IsNullOrEmpty(keyFile) ? "snowflake_jwt"
+                : !string.IsNullOrEmpty(token) ? "oauth" : "externalbrowser";
         else if (!Authenticators.Contains(auth))
             throw new InvalidOperationException(
                 $"Invalid SNOWFLAKE_AUTHENTICATOR '{auth}'. Must be one of: {string.Join(", ", Authenticators)}.");
         if (auth == "snowflake_jwt" && string.IsNullOrEmpty(keyFile))
             throw new InvalidOperationException("SNOWFLAKE_AUTHENTICATOR=snowflake_jwt requires SNOWFLAKE_PRIVATE_KEY_FILE.");
+
+        if (auth is "oauth" or "programmatic_access_token" && string.IsNullOrEmpty(token))
+            throw new InvalidOperationException($"SNOWFLAKE_AUTHENTICATOR={auth} requires SNOWFLAKE_TOKEN.");
+        if (auth is "snowflake" or "username_password_mfa" && string.IsNullOrEmpty(password))
+            throw new InvalidOperationException($"SNOWFLAKE_AUTHENTICATOR={auth} requires SNOWFLAKE_PASSWORD.");
 
         var b = new Snowflake.Data.Client.SnowflakeDbConnectionStringBuilder
         {
@@ -128,8 +137,10 @@ public static class SnowflakeMetadata
         };
         void Set(string key, string? value) { if (!string.IsNullOrEmpty(value)) b[key] = value; }
         Set("user", env("SNOWFLAKE_USER"));
-        if (auth == "snowflake") Set("password", password);
-        if (auth == "snowflake_jwt") Set("private_key_file", keyFile);
+        if (auth is "snowflake" or "username_password_mfa") Set("password", password);
+        if (auth == "username_password_mfa") Set("passcode", env("SNOWFLAKE_PASSCODE"));
+        if (auth == "snowflake_jwt") { Set("private_key_file", keyFile); Set("private_key_pwd", env("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")); }
+        if (auth is "oauth" or "programmatic_access_token") Set("token", token);
         Set("warehouse", env("SNOWFLAKE_WAREHOUSE"));
         Set("role", env("SNOWFLAKE_ROLE"));
         return b.ConnectionString;

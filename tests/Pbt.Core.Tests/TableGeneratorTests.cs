@@ -223,6 +223,12 @@ public class TableGeneratorTests : IDisposable
         Assert.Contains("account=org-acct;", cs);
         Assert.Contains("authenticator=snowflake;", cs);
         Assert.Throws<InvalidOperationException>(() => SnowflakeMetadata.BuildConnectionString("DB", "SCH", _ => null));
+
+        env.Remove("SNOWFLAKE_PASSWORD");
+        env["SNOWFLAKE_TOKEN"] = "tok";
+        Assert.Contains("authenticator=oauth;", SnowflakeMetadata.BuildConnectionString("DB", "SCH", k => env.GetValueOrDefault(k)));
+        env["SNOWFLAKE_AUTHENTICATOR"] = "username_password_mfa";
+        Assert.Throws<InvalidOperationException>(() => SnowflakeMetadata.BuildConnectionString("DB", "SCH", k => env.GetValueOrDefault(k)));
     }
 
     [Fact]

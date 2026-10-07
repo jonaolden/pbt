@@ -436,7 +436,8 @@ For `csv`, add `sources.csv` with `connector:` (and `type: snowflake|sqlserver`,
 
 **Behaviour**
 
-- Snowflake metadata is read in-process with the .NET `Snowflake.Data` connector (no Python). Credentials come from env vars (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD` / `SNOWFLAKE_PRIVATE_KEY_FILE` / `SNOWFLAKE_AUTHENTICATOR`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_ROLE`), never from or into project files.
+- Snowflake metadata is read in-process with the .NET `Snowflake.Data` connector (no Python). Credentials come from env vars (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_ROLE`, plus auth below), never from or into project files.
+- Snowflake auth is `SNOWFLAKE_AUTHENTICATOR`, inferred when unset (`SNOWFLAKE_PASSWORD` -> `snowflake`, `SNOWFLAKE_PRIVATE_KEY_FILE` -> `snowflake_jwt`, `SNOWFLAKE_TOKEN` -> `oauth`, else `externalbrowser` SSO). Supported: `externalbrowser`, `snowflake` (`SNOWFLAKE_PASSWORD`), `username_password_mfa` (`SNOWFLAKE_PASSWORD`, optional `SNOWFLAKE_PASSCODE`), `snowflake_jwt` (`SNOWFLAKE_PRIVATE_KEY_FILE`, optional `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`), `oauth` / `programmatic_access_token` (`SNOWFLAKE_TOKEN`), `workload_identity`.
 - `pbt.yml` only selects which tables to retrieve (`table_name`, `source`, `target`). There are no modeling options: column names, types, keys, hidden flags, formats, measures and so on are edited in the generated `tables/<name>.yaml`. Unknown keys in `pbt.yml` are rejected.
 - Re-runs merge into the existing table file: manual edits (measures, hierarchies, descriptions, column properties) are kept; new source columns are added; unchanged files are not rewritten. An unreadable existing file is an error, never overwritten.
 
