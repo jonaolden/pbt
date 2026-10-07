@@ -405,15 +405,29 @@ git worktree remove /tmp/base-branch
 
 ---
 
-## generate-tables / validate-tables
+## generate-tables
 
-Declare source tables in `pbt.yml`; pbt fetches the columns and writes `tables/<name>.yaml`. `pbt build` then produces the TMDL.
+Expand table declarations in `pbt.yml` into `tables/<name>.yaml` by fetching columns from the source. `pbt build` then produces the TMDL.
+
+```
+pbt generate-tables [options]
+```
+
+**Options**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--config <path>` | `pbt.yml` | Path to the config file. Tables are written to `tables/` next to it. |
+| `--dry-run` | false | Report created / updated / unchanged / error per table without writing files (including model refs). |
+
+Exit code `1` if any table fails; other tables are still processed. Supports global `--output-format json`.
+
+**`pbt.yml`**
 
 ```yaml
-# pbt.yml
 sources:
   snowflake:
-    connector: SnowflakeSource     # shared connector expression (or `connection:` literal; no secrets, no ${VAR})
+    connector: SnowflakeSource     # shared connector expression, or `connection:` literal (no secrets, no ${VAR})
 model: models/sales_model.yaml     # optional: missing `ref:` entries are added here (YAML comments in it are lost)
 tables:
   - table_name: Property
@@ -426,16 +440,38 @@ tables:
       CREATED_AT: { data_type: DateTime, format_string: "yyyy-mm-dd" }
 ```
 
-```bash
-pbt generate-tables --config pbt.yml --dry-run   # created / updated / unchanged / error per table
-pbt generate-tables --config pbt.yml
-pbt validate-tables --config pbt.yml             # offline checks only
-```
+**Behaviour**
 
 - Snowflake metadata comes from `plugins/snowflake_to_tmdl` (`python -m snowflake_to_tmdl`; set `PBT_PYTHON` to pick the interpreter). Credentials are read from that plugin's env vars (`SNOWFLAKE_ACCOUNT`, ...), never from or into project files.
-- Re-runs merge into the existing table file: manual measures, hierarchies, descriptions and other table properties are kept; unchanged files are not rewritten. An unreadable existing file is an error, not overwritten. `column_overrides` always win.
-- `options.mode` supports only `import`. `disable_auto_date_time: true` is accepted (it is the default); the setting is model-level (`auto_time_intelligence`).
-- Exit code 1 if any table fails.
+- Re-runs merge into the existing table file: manual measures, hierarchies, descriptions and other table properties are kept; unchanged files are not rewritten. An unreadable existing file is an error, never overwritten. `column_overrides` always win.
+- `options.mode` supports only `import`. `disable_auto_date_time: true` is accepted (it is the default); the real setting is model-level (`auto_time_intelligence`).
+
+**Example**
+
+```bash
+pbt generate-tables --dry-run
+pbt generate-tables --config ./pbt.yml
+```
+
+---
+
+## validate-tables
+
+Check `pbt.yml` table definitions offline (no source lookup): required fields, duplicate `table_name`, configured source, target component count, unsupported options.
+
+```
+pbt validate-tables [options]
+```
+
+**Options**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--config <path>` | `pbt.yml` | Path to the config file. |
+
+Exit code `1` if any definition is invalid. Supports global `--output-format json`.
+
+---
 
 ## Global Behaviour
 
