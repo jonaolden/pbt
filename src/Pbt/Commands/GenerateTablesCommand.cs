@@ -10,7 +10,7 @@ public static class GenerateTablesCommand
 {
     public static Command Create()
     {
-        var configOption = new Option<string>("--config", () => "pbt.yml", "Path to pbt.yml");
+        var configOption = new Option<string>("--config", () => "pbt.yml", "Path to pbt.yml (.yaml also accepted)");
         var dryRunOption = new Option<bool>("--dry-run", "Show what would change without writing files");
         var command = new Command("generate-tables", "Generate tables/*.yaml from pbt.yml source definitions")
         {
@@ -34,6 +34,11 @@ public static class GenerateTablesCommand
     internal static (ProjectConfig Config, string Dir) Load(string path)
     {
         var full = Path.GetFullPath(path);
+        var alt = Path.ChangeExtension(full, full.EndsWith(".yml") ? ".yaml" : ".yml");
+        if (!File.Exists(full) && File.Exists(alt)) full = alt;
+        if (!File.Exists(full))
+            throw new FileNotFoundException(
+                $"Config not found: {full}. Create a pbt.yml here (see docs/cli-reference.md#generate-tables) or pass --config <path>.");
         return (new YamlSerializer().LoadFromFile<ProjectConfig>(full), Path.GetDirectoryName(full)!);
     }
 
@@ -56,7 +61,7 @@ public static class ValidateTablesCommand
 {
     public static Command Create()
     {
-        var configOption = new Option<string>("--config", () => "pbt.yml", "Path to pbt.yml");
+        var configOption = new Option<string>("--config", () => "pbt.yml", "Path to pbt.yml (.yaml also accepted)");
         var command = new Command("validate-tables", "Validate pbt.yml table definitions (offline, no source lookup)") { configOption };
         command.SetHandler(config => GenerateTablesCommand.Run(() =>
         {
