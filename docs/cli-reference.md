@@ -405,6 +405,38 @@ git worktree remove /tmp/base-branch
 
 ---
 
+## generate-tables / validate-tables
+
+Declare source tables in `pbt.yml`; pbt fetches the columns and writes `tables/<name>.yaml`. `pbt build` then produces the TMDL.
+
+```yaml
+# pbt.yml
+sources:
+  snowflake:
+    connector: SnowflakeSource     # shared connector expression (or `connection:` literal; no secrets, no ${VAR})
+model: models/sales_model.yaml     # optional: missing `ref:` entries are added here (YAML comments in it are lost)
+tables:
+  - table_name: Property
+    source: snowflake
+    target: db.schema.table        # unquoted parts fold to UPPER; "Quoted" keeps case
+    options: { hidden: false, mode: import }
+    column_overrides:              # keyed by source column
+      PROPERTY_ID: { name: PropertyId, is_key: true }
+      INTERNAL_CODE: { is_hidden: true }
+      CREATED_AT: { data_type: DateTime, format_string: "yyyy-mm-dd" }
+```
+
+```bash
+pbt generate-tables --config pbt.yml --dry-run   # created / updated / unchanged / error per table
+pbt generate-tables --config pbt.yml
+pbt validate-tables --config pbt.yml             # offline checks only
+```
+
+- Snowflake metadata comes from `plugins/snowflake_to_tmdl` (`python -m snowflake_to_tmdl`; set `PBT_PYTHON` to pick the interpreter). Credentials are read from that plugin's env vars (`SNOWFLAKE_ACCOUNT`, ...), never from or into project files.
+- Re-runs merge into the existing table file: manual measures, hierarchies, descriptions and other table properties are kept; unchanged files are not rewritten. An unreadable existing file is an error, not overwritten. `column_overrides` always win.
+- `options.mode` supports only `import`. `disable_auto_date_time: true` is accepted (it is the default); the setting is model-level (`auto_time_intelligence`).
+- Exit code 1 if any table fails.
+
 ## Global Behaviour
 
 **Path resolution**: All commands that accept a `project-path` also accept a direct model YAML file path. When a file is given, pbt infers the project root from the file's parent directories and uses that for loading tables, environments, and the lineage manifest.

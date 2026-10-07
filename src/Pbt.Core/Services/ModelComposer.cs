@@ -1031,11 +1031,11 @@ public sealed class ModelComposer
         var baseExpression = source.Type.ToLowerInvariant() switch
         {
             "snowflake" => $@"let
-    Source = Snowflake.Databases(""{source.Connection}""),
-    Database = Source{{[Name=""{source.Database}""]}},
+    Source = Snowflake.Databases(""{MStr(source.Connection)}""),
+    Database = Source{{[Name=""{MStr(source.Database)}""]}},
     Query = Value.NativeQuery(Database, ""{source.Query}"")",
             "sqlserver" => $@"let
-    Source = Sql.Database(""{source.Connection}"", ""{source.Database}""),
+    Source = Sql.Database(""{MStr(source.Connection)}"", ""{MStr(source.Database)}""),
     Query = Value.NativeQuery(Source, ""{source.Query}"")",
             _ => throw new NotSupportedException($"Custom queries not supported for source type: {source.Type}")
         };
@@ -1053,6 +1053,8 @@ public sealed class ModelComposer
     /// <summary>
     /// Generate M expression for Snowflake source
     /// </summary>
+    private static string MStr(string? s) => (s ?? string.Empty).Replace("\"", "\"\"");
+
     private string GenerateSnowflakeExpression(SourceDefinition source, TableDefinition tableDef)
     {
         if (string.IsNullOrWhiteSpace(source.Database))
@@ -1073,9 +1075,9 @@ public sealed class ModelComposer
         {
             baseExpression = $@"let
     Source = {source.Connector},
-    Database = Source{{[Name=""{source.Database}""]}},
-    Schema = Database{{[Name=""{schemaName}""]}},
-    Table = Schema{{[Name=""{source.Table}""]}}";
+    Database = Source{{[Name=""{MStr(source.Database)}""]}},
+    Schema = Database{{[Name=""{MStr(schemaName)}""]}},
+    Table = Schema{{[Name=""{MStr(source.Table)}""]}}";
         }
         else
         {
@@ -1085,10 +1087,10 @@ public sealed class ModelComposer
             }
 
             baseExpression = $@"let
-    Source = Snowflake.Databases(""{source.Connection}""),
-    Database = Source{{[Name=""{source.Database}""]}},
-    Schema = Database{{[Name=""{schemaName}""]}},
-    Table = Schema{{[Name=""{source.Table}""]}}";
+    Source = Snowflake.Databases(""{MStr(source.Connection)}""),
+    Database = Source{{[Name=""{MStr(source.Database)}""]}},
+    Schema = Database{{[Name=""{MStr(schemaName)}""]}},
+    Table = Schema{{[Name=""{MStr(source.Table)}""]}}";
         }
 
         // Add type transformation if M types are specified
@@ -1124,8 +1126,8 @@ public sealed class ModelComposer
         var schemaName = !string.IsNullOrWhiteSpace(source.Schema) ? source.Schema : "dbo";
 
         var baseExpression = $@"let
-    Source = Sql.Database(""{source.Connection}"", ""{source.Database}""),
-    Table = Source{{[Schema=""{schemaName}"",Item=""{source.Table}""]}}";
+    Source = Sql.Database(""{MStr(source.Connection)}"", ""{MStr(source.Database)}""),
+    Table = Source{{[Schema=""{MStr(schemaName)}"",Item=""{MStr(source.Table)}""]}}";
 
         // Add type transformation if M types are specified
         var typeTransform = GenerateTypeTransformation(tableDef, "Table");

@@ -42,5 +42,7 @@ rootCommand.AddCommand(ListCommand.Create());
 rootCommand.AddCommand(ImportCommand.Create());
 rootCommand.AddCommand(LineageCommand.Create());
 rootCommand.AddCommand(DiffCommand.Create());
+rootCommand.AddCommand(GenerateTablesCommand.Create());
+rootCommand.AddCommand(ValidateTablesCommand.Create());
 
 return await rootCommand.InvokeAsync(args);
