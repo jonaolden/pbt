@@ -1,14 +1,8 @@
-# snowflake.yaml - Snowflake source configuration for pbt import
+# snowflake.yaml - Snowflake connector config (shared data source expression for pbt build)
 #
-# Usage:
-#   pbt import snowflake snowflake.yaml
-#   pbt import snowflake snowflake.yaml ./my-tables
-#   pbt import snowflake snowflake.yaml --dry-run
-#   pbt import snowflake snowflake.yaml --test-connection
-#
-# Credentials are loaded from .env file (see .env.example):
-#   SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD,
-#   SNOWFLAKE_WAREHOUSE, SNOWFLAKE_ROLE
+# Table import from Snowflake: `pbt generate-tables` (in-process .NET connector).
+# Credentials come from the environment (see .env.example). The import/datatypes/
+# column_naming sections below are no longer read by pbt.
 
 source_type: snowflake
 

@@ -33,6 +33,16 @@ public class CalculationGroupDefinition
     public int? Precedence { get; set; }
 
     /// <summary>
+    /// DAX applied to a measure when no calculation item is selected
+    /// </summary>
+    public string? NoSelectionExpression { get; set; }
+
+    /// <summary>
+    /// DAX applied when multiple or no calculation items are selected
+    /// </summary>
+    public string? MultipleOrEmptySelectionExpression { get; set; }
+
+    /// <summary>
     /// File path where this definition was loaded from
     /// </summary>
     public string? SourceFilePath { get; set; }

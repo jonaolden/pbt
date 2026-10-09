@@ -1,331 +1,123 @@
-using System.Text.RegularExpressions;
+using Pbt.Core.Infrastructure;
 using Pbt.Core.Models;
 
 namespace Pbt.Core.Services;
 
+public sealed record TableGenResult(string Table, string Status, string? Error = null);
+
+public sealed record GenerateReport(List<TableGenResult> Tables, List<string> RefsAdded)
+{
+    public bool HasErrors => Tables.Any(t => t.Status == "error");
+}
+
 /// <summary>
-/// Generates TableDefinition from CSV schema rows
+/// Expands <see cref="ProjectConfig"/> table specs into tables/*.yaml, merging into existing files
+/// with <see cref="TableMerger"/> so manual measures, hierarchies and descriptions survive.
 /// </summary>
 public sealed class TableGenerator
 {
-    private readonly ScaffoldConfig _config;
-    private readonly TypeMapper? _typeMapper;
-    private readonly SourceTypeMapper? _sourceTypeMapper;
-    private readonly NamingConverter _namingConverter;
-    private readonly SourceTypeConfig? _sourceTypeConfig;
-    private ColumnNamingGroup? _currentNamingGroup;
+    private readonly YamlSerializer _yaml = new();
+    private readonly Dictionary<string, ISourceAdapter> _adapters;
 
-    public TableGenerator(ScaffoldConfig config)
+    public TableGenerator(Dictionary<string, ISourceAdapter>? adapters = null)
     {
-        _config = config;
-        _typeMapper = new TypeMapper(config);
-        _sourceTypeMapper = null;
-        _namingConverter = new NamingConverter(config);
+        _adapters = adapters ?? new(StringComparer.OrdinalIgnoreCase) { ["snowflake"] = new SnowflakeAdapter(), ["csv"] = new CsvAdapter() };
     }
 
-    public TableGenerator(ScaffoldConfig config, SourceTypeConfig sourceTypeConfig)
+    /// <summary>Offline validation. Returns one error (or null) per spec, same order as config.Tables.</summary>
+    public List<string?> Validate(ProjectConfig config)
     {
-        _config = config;
-        _typeMapper = null;
-        _sourceTypeMapper = new SourceTypeMapper(sourceTypeConfig);
-        _namingConverter = new NamingConverter(config);
-        _sourceTypeConfig = sourceTypeConfig;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return config.Tables.Select((t, i) => ValidateSpec(config, t, i, seen)).ToList();
     }
 
-    /// <summary>
-    /// Generate TableDefinition from CSV rows for a single table
-    /// </summary>
-    public TableDefinition GenerateTable(string tableName, List<CsvSchemaRow> rows)
+    private string? ValidateSpec(ProjectConfig config, TableGenSpec t, int i, HashSet<string> seen)
     {
-        if (rows.Count == 0)
-        {
-            throw new ArgumentException($"No rows provided for table: {tableName}", nameof(rows));
-        }
-
-        var firstRow = rows[0];
-
-        // Find matching naming group for this table
-        _currentNamingGroup = FindMatchingNamingGroup(tableName);
-
-        // Determine table name based on group settings
-        var convertedTableName = GetTableName(tableName);
-
-        var tableDef = new TableDefinition
-        {
-            Name = convertedTableName,
-            Description = firstRow.TableComment,
-            IsHidden = _namingConverter.ShouldHideTable(tableName),
-            Columns = new List<ColumnDefinition>(),
-            Hierarchies = new List<HierarchyDefinition>()
-        };
-
-        // Override IsHidden from naming group if specified
-        if (_currentNamingGroup?.TableIsHidden != null)
-        {
-            tableDef.IsHidden = _currentNamingGroup.TableIsHidden.Value;
-        }
-
-        // Add source metadata if configured
-        if (_config.Source != null)
-        {
-            tableDef.Source = new SourceDefinition
-            {
-                Type = _config.Source.Type,
-                Connection = _config.Source.Connection,
-                Database = firstRow.TableCatalog,
-                Schema = firstRow.TableSchema,
-                Table = tableName
-            };
-        }
-
-        // Add connector reference from source type config if available
-        if (_sourceTypeConfig?.Connector != null && tableDef.Source != null)
-        {
-            tableDef.Source.Connector = _sourceTypeConfig.Connector.Name;
-            // Don't need inline connection if using shared connector
-            tableDef.Source.Connection = null;
-        }
-
-        // Filter columns by exclude/include patterns
-        var filteredRows = FilterColumns(rows);
-
-        // Generate columns
-        foreach (var row in filteredRows)
-        {
-            var columnName = GetColumnName(row.ColumnName);
-
-            ColumnDefinition column;
-
-            // Use SourceTypeMapper if available (dual type mapping)
-            if (_sourceTypeMapper != null)
-            {
-                var typeMapping = _sourceTypeMapper.MapType(row.DataType, row.ColumnName);
-                column = new ColumnDefinition
-                {
-                    Name = columnName,
-                    Type = typeMapping.TmdlType,
-                    MType = typeMapping.MType,
-                    SourceColumn = row.ColumnName,  // Keep original column name for source mapping
-                    Description = row.ColumnComment
-                };
-            }
-            // Fall back to legacy TypeMapper
-            else if (_typeMapper != null)
-            {
-                var pbiType = _typeMapper.MapType(row.DataType, row.ColumnName);
-                var formatString = _typeMapper.GetFormatString(row.ColumnName);
-                column = new ColumnDefinition
-                {
-                    Name = columnName,
-                    Type = pbiType,
-                    SourceColumn = row.ColumnName,
-                    Description = row.ColumnComment,
-                    FormatString = formatString  // Legacy mapper still provides format strings
-                };
-            }
-            else
-            {
-                throw new InvalidOperationException("No type mapper configured");
-            }
-
-            // Apply column naming rules from source config
-            ApplyColumnNamingRules(column);
-
-            tableDef.Columns.Add(column);
-        }
-
-        return tableDef;
-    }
-
-    /// <summary>
-    /// Find matching naming group for a table
-    /// </summary>
-    private ColumnNamingGroup? FindMatchingNamingGroup(string tableName)
-    {
-        if (_sourceTypeConfig?.ColumnNaming?.Groups == null)
-        {
-            return null;
-        }
-
-        // Check groups in order, first match wins
-        foreach (var group in _sourceTypeConfig.ColumnNaming.Groups)
-        {
-            if (Regex.IsMatch(tableName, group.TablePattern, RegexOptions.IgnoreCase))
-            {
-                return group;
-            }
-        }
-
+        var at = $"tables[{i}]";
+        if (string.IsNullOrWhiteSpace(t.TableName)) return $"{at}: table_name is required.";
+        if (!seen.Add(t.TableName)) return $"{at} ({t.TableName}): duplicate table_name.";
+        if (string.IsNullOrWhiteSpace(t.Source)) return $"{at} ({t.TableName}): source is required.";
+        if (string.IsNullOrWhiteSpace(t.Target)) return $"{at} ({t.TableName}): target is required.";
+        if (!config.Sources.TryGetValue(t.Source, out var conn) || !_adapters.TryGetValue(t.Source, out var adapter))
+            return $"{at} ({t.TableName}): source '{t.Source}' is not configured. " +
+                   $"Add it under 'sources:' (adapters available: {string.Join(", ", _adapters.Keys)}).";
+        if (string.IsNullOrWhiteSpace(conn.Connector) && string.IsNullOrWhiteSpace(conn.Connection))
+            return $"{at} ({t.TableName}): sources.{t.Source} needs 'connector' or 'connection'.";
+        if (conn.Connection?.Contains("${") == true)
+            return $"{at} ({t.TableName}): sources.{t.Source}.connection cannot use ${{VAR}}; use 'connector' with a shared expression.";
+        if (adapter.ValidateTarget(t.Target) is { } targetError) return $"{at} ({t.TableName}): {targetError}";
         return null;
     }
 
-    /// <summary>
-    /// Get table name based on group settings
-    /// </summary>
-    private string GetTableName(string sourceTableName)
+    public GenerateReport Generate(ProjectConfig config, string configDir, bool dryRun)
     {
-        // Check if group specifies table name conversion
-        if (_currentNamingGroup?.TableNameConversion != null)
+        var errors = Validate(config);
+        var results = new List<TableGenResult>();
+        for (var i = 0; i < config.Tables.Count; i++)
         {
-            // If conversion is "none", keep original name
-            if (_currentNamingGroup.TableNameConversion.Equals("none", StringComparison.OrdinalIgnoreCase))
+            var spec = config.Tables[i];
+            if (errors[i] != null) { results.Add(new(spec.TableName, "error", errors[i])); continue; }
+            try { results.Add(new(spec.TableName, GenerateTable(config, spec, configDir, dryRun))); }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or ArgumentException)
             {
-                return sourceTableName;
+                results.Add(new(spec.TableName, "error", ex.Message));
             }
         }
 
-        // Apply default naming conversion
-        return _namingConverter.ConvertTableName(sourceTableName);
+        var ok = results.Where(r => r.Status != "error").Select(r => r.Table);
+        return new GenerateReport(results, AddRefs(config, configDir, ok, dryRun));
     }
 
-    /// <summary>
-    /// Get column name with preserve patterns applied
-    /// </summary>
-    private string GetColumnName(string sourceColumnName)
+    private string GenerateTable(ProjectConfig config, TableGenSpec spec, string configDir, bool dryRun)
     {
-        // Use group's preserve patterns if available, otherwise use default
-        var preservePatterns = _currentNamingGroup?.PreservePatterns?.Count > 0
-            ? _currentNamingGroup.PreservePatterns
-            : _sourceTypeConfig?.ColumnNaming?.PreservePatterns;
+        var adapter = _adapters[spec.Source];
+        var path = Path.Combine(configDir, "tables", FileNameSanitizer.SanitizeToLower(spec.TableName) + ".yaml");
 
-        // Check if we should preserve the original name based on patterns
-        if (preservePatterns != null)
+        // Never fall back to generated-only when an existing file is unreadable: that would overwrite manual work.
+        var existing = File.Exists(path) ? _yaml.LoadFromFile<TableDefinition>(path) : null;
+
+        var meta = adapter.GetTableMetadata(spec.Target);
+        if (meta.Columns.Count == 0)
+            throw new InvalidOperationException($"No columns returned for target '{spec.Target}'.");
+        var generated = new TableDefinition
         {
-            foreach (var pattern in preservePatterns)
-            {
-                if (Regex.IsMatch(sourceColumnName, pattern, RegexOptions.IgnoreCase))
-                {
-                    return sourceColumnName;  // Keep original name
-                }
-            }
-        }
-
-        // Apply naming conversion from group or default
-        var conversion = _currentNamingGroup?.Conversion ?? _sourceTypeConfig?.ColumnNaming?.Conversion;
-
-        // If conversion is "none", keep original name
-        if (conversion?.Equals("none", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return sourceColumnName;
-        }
-
-        // Apply naming conversion
-        return _namingConverter.ConvertColumnName(sourceColumnName);
-    }
-
-    /// <summary>
-    /// Apply column naming rules from source type configuration
-    /// </summary>
-    private void ApplyColumnNamingRules(ColumnDefinition column)
-    {
-        if (_sourceTypeConfig?.ColumnNaming == null)
-        {
-            return;
-        }
-
-        // Use group's rules if available, otherwise use default rules
-        var rules = _currentNamingGroup?.Rules?.Count > 0
-            ? _currentNamingGroup.Rules
-            : _sourceTypeConfig.ColumnNaming.Rules;
-
-        if (rules == null || rules.Count == 0)
-        {
-            return;
-        }
-
-        // Apply naming rules (replacement, is_hidden, description)
-        foreach (var rule in rules)
-        {
-            if (Regex.IsMatch(column.SourceColumn ?? column.Name, rule.Pattern, RegexOptions.IgnoreCase))
-            {
-                // Apply replacement if specified
-                if (!string.IsNullOrEmpty(rule.Replacement))
-                {
-                    column.Name = Regex.Replace(column.SourceColumn ?? column.Name, rule.Pattern, rule.Replacement, RegexOptions.IgnoreCase);
-                }
-
-                // Apply is_hidden if specified
-                if (rule.IsHidden.HasValue)
-                {
-                    column.IsHidden = rule.IsHidden.Value;
-                }
-
-                // Apply description if specified
-                if (!string.IsNullOrEmpty(rule.Description))
-                {
-                    column.Description = rule.Description;
-                }
-
-                // Only apply first matching rule
-                break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Filter columns based on exclude/include patterns from source config.
-    /// Exclude is evaluated first, then include (if specified).
-    /// Group-level patterns override default patterns.
-    /// </summary>
-    private List<CsvSchemaRow> FilterColumns(List<CsvSchemaRow> rows)
-    {
-        // Resolve patterns: group overrides default
-        var excludePatterns = _currentNamingGroup?.ExcludePatterns?.Count > 0
-            ? _currentNamingGroup.ExcludePatterns
-            : _sourceTypeConfig?.ColumnNaming?.ExcludePatterns;
-
-        var includePatterns = _currentNamingGroup?.IncludePatterns?.Count > 0
-            ? _currentNamingGroup.IncludePatterns
-            : _sourceTypeConfig?.ColumnNaming?.IncludePatterns;
-
-        if ((excludePatterns == null || excludePatterns.Count == 0) &&
-            (includePatterns == null || includePatterns.Count == 0))
-        {
-            return rows;
-        }
-
-        return rows.Where(row =>
-        {
-            var colName = row.ColumnName;
-
-            // Exclude first
-            if (excludePatterns?.Count > 0)
-            {
-                foreach (var pattern in excludePatterns)
-                {
-                    if (Regex.IsMatch(colName, pattern, RegexOptions.IgnoreCase))
-                        return false;
-                }
-            }
-
-            // Include filter (if specified, column must match at least one)
-            if (includePatterns?.Count > 0)
-            {
-                foreach (var pattern in includePatterns)
-                {
-                    if (Regex.IsMatch(colName, pattern, RegexOptions.IgnoreCase))
-                        return true;
-                }
-                return false; // No include pattern matched
-            }
-
-            return true;
-        }).ToList();
-    }
-
-    /// <summary>
-    /// Generate GeneratedTable metadata for manifest tracking
-    /// </summary>
-    public GeneratedTable GenerateMetadata(string tableName, TableDefinition tableDef, string filePath)
-    {
-        return new GeneratedTable
-        {
-            TableName = tableDef.Name,
-            FilePath = filePath,
-            ColumnsGenerated = tableDef.Columns.Select(c => c.Name).ToList(),
-            ColumnTypes = tableDef.Columns.ToDictionary(c => c.Name, c => c.Type),
-            SourceSchema = tableDef.Source?.Schema,
-            SourceTable = tableDef.Source?.Table
+            Name = spec.TableName,
+            Description = meta.Description,
+            Source = adapter.ToSource(spec.Target, config.Sources[spec.Source]),
+            Columns = meta.Columns
         };
+
+        // Merger decides column-level merging; every other table-level property comes from the existing file as-is.
+        var table = generated;
+        if (existing != null)
+        {
+            existing.Columns = new TableMerger(new MergeOptions()).MergeTable(generated, path).Columns;
+            existing.Source = generated.Source;
+            existing.Description ??= generated.Description;
+            table = existing;
+        }
+
+        var yaml = _yaml.Serialize(table);
+        var status = existing == null ? "created" : File.ReadAllText(path) == yaml ? "unchanged" : "updated";
+        if (!dryRun && status != "unchanged")
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, yaml);
+        }
+        return status;
+    }
+
+    private List<string> AddRefs(ProjectConfig config, string configDir, IEnumerable<string> tables, bool dryRun)
+    {
+        if (string.IsNullOrWhiteSpace(config.Model)) return new();
+        var modelPath = Path.Combine(configDir, config.Model);
+        var model = _yaml.LoadFromFile<ModelDefinition>(modelPath);
+        var missing = tables.Where(t => model.Tables.All(r => r.Ref != t)).ToList();
+        if (missing.Count > 0 && !dryRun)
+        {
+            model.Tables.AddRange(missing.Select(t => new TableReference { Ref = t }));
+            _yaml.SaveToFile(model, modelPath); // ponytail: round-trip drops YAML comments in the model file
+        }
+        return missing;
     }
 }

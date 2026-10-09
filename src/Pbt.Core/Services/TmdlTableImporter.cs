@@ -84,13 +84,13 @@ public sealed class TmdlTableImporter
         {
             throw new InvalidOperationException(
                 $"Failed to deserialize TMDL model from: {directoryPath}\n\n" +
-                $"Error: {ex.Message}", ex);
+                $"Error in '{ex.Document}' at line {ex.Line}: {ex.Message}\n  {ex.LineText}", ex);
         }
         catch (TmdlSerializationException ex)
         {
             throw new InvalidOperationException(
                 $"Failed to deserialize TMDL model from: {directoryPath}\n\n" +
-                $"Error: {ex.Message}", ex);
+                $"Error in '{ex.Document}' at line {ex.Line}: {ex.Message}", ex);
         }
 
         if (database.Model == null)
@@ -102,7 +102,7 @@ public sealed class TmdlTableImporter
         var tables = new List<TableDefinition>();
         foreach (var table in database.Model.Tables)
         {
-            var tableDef = ConvertToTableDefinition(table, includeLineageTags);
+            var tableDef = TomConverter.ToTableDefinition(table, includeLineageTags);
             tables.Add(tableDef);
         }
 
@@ -244,7 +244,7 @@ public sealed class TmdlTableImporter
 
             // Extract the table
             var table = database.Model.Tables[0];
-            return ConvertToTableDefinition(table, includeLineageTags);
+            return TomConverter.ToTableDefinition(table, includeLineageTags);
         }
         finally
         {
@@ -303,111 +303,5 @@ public sealed class TmdlTableImporter
         }
 
         return queryGroups.ToList();
-    }
-
-    /// <summary>
-    /// Convert a TOM Table to a TableDefinition YAML model
-    /// </summary>
-    private TableDefinition ConvertToTableDefinition(Table table, bool includeLineageTags)
-    {
-        var tableDef = new TableDefinition
-        {
-            Name = table.Name,
-            Description = table.Description,
-            IsHidden = table.IsHidden,
-            LineageTag = includeLineageTags ? table.LineageTag : null,
-            Columns = new List<ColumnDefinition>(),
-            Hierarchies = new List<HierarchyDefinition>(),
-            Measures = new List<MeasureDefinition>()
-        };
-
-        // Extract M expression from partition
-        if (table.Partitions.Count > 0 && table.Partitions[0].Source is MPartitionSource mSource)
-        {
-            // Normalize tabs to spaces for YAML compatibility
-            tableDef.MExpression = mSource.Expression?.Replace("\t", "  ");
-        }
-
-        // Extract data columns
-        foreach (var column in table.Columns.OfType<DataColumn>())
-        {
-            var colDef = new ColumnDefinition
-            {
-                Name = column.Name,
-                Type = column.DataType.ToString(),
-                Description = column.Description,
-                SourceColumn = column.SourceColumn,
-                FormatString = column.FormatString,
-                IsHidden = column.IsHidden,
-                DisplayFolder = column.DisplayFolder,
-                LineageTag = includeLineageTags ? column.LineageTag : null,
-                SortByColumn = column.SortByColumn?.Name
-            };
-
-            tableDef.Columns.Add(colDef);
-        }
-
-        // Extract calculated columns
-        foreach (var column in table.Columns.OfType<CalculatedColumn>())
-        {
-            var colDef = new ColumnDefinition
-            {
-                Name = column.Name,
-                Type = column.DataType.ToString(),
-                Description = column.Description,
-                Expression = column.Expression,
-                FormatString = column.FormatString,
-                IsHidden = column.IsHidden,
-                DisplayFolder = column.DisplayFolder,
-                LineageTag = includeLineageTags ? column.LineageTag : null,
-                SortByColumn = column.SortByColumn?.Name
-            };
-
-            tableDef.Columns.Add(colDef);
-        }
-
-        // Extract hierarchies
-        foreach (var hierarchy in table.Hierarchies)
-        {
-            var hierarchyDef = new HierarchyDefinition
-            {
-                Name = hierarchy.Name,
-                Description = hierarchy.Description,
-                DisplayFolder = hierarchy.DisplayFolder,
-                LineageTag = includeLineageTags ? hierarchy.LineageTag : null,
-                Levels = new List<LevelDefinition>()
-            };
-
-            foreach (var level in hierarchy.Levels)
-            {
-                hierarchyDef.Levels.Add(new LevelDefinition
-                {
-                    Name = level.Name,
-                    Column = level.Column.Name
-                });
-            }
-
-            tableDef.Hierarchies.Add(hierarchyDef);
-        }
-
-        // Extract measures
-        foreach (var measure in table.Measures)
-        {
-            var measureDef = new MeasureDefinition
-            {
-                Name = measure.Name,
-                Table = table.Name,
-                Expression = measure.Expression,
-                Description = measure.Description,
-                FormatString = measure.FormatString,
-                DisplayFolder = measure.DisplayFolder,
-                IsHidden = measure.IsHidden,
-                LineageTag = includeLineageTags ? measure.LineageTag : null
-            };
-
-            tableDef.Measures.Add(measureDef);
-        }
-
-        return tableDef;
     }
 }

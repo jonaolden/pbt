@@ -13,7 +13,6 @@ public static class ImportCommand
         var command = new Command("import", "Import TMDL models or tables to YAML format");
         command.AddCommand(CreateModelSubcommand());
         command.AddCommand(CreateTableSubcommand());
-        command.AddCommand(CreateSourceSubcommand());
         return command;
     }
 
@@ -134,123 +133,34 @@ public static class ImportCommand
 
     private static Command CreateTableSubcommand()
     {
-        var pathArgument = new Argument<string>("path", "Path to CSV schema file or TMDL folder/file");
+        var pathArgument = new Argument<string>("path", "Path to TMDL folder/file");
         var outputPathArgument = new Argument<string>("output-path", () => "./tables", "Path where table YAML files will be created");
-        var sourceConfigOption = new Option<string?>("--source-config", "Path to source configuration file (required for CSV imports)");
-        var includeLineageTagsOption = new Option<bool>("--include-lineage-tags", "Preserve original lineage tags (TMDL imports only)");
+        var includeLineageTagsOption = new Option<bool>("--include-lineage-tags", "Preserve original lineage tags");
 
-        var command = new Command("table", "Import tables from CSV or TMDL to YAML format")
+        var command = new Command("table", "Import tables from TMDL to YAML format")
         {
-            pathArgument, outputPathArgument, sourceConfigOption, includeLineageTagsOption
+            pathArgument, outputPathArgument, includeLineageTagsOption
         };
 
-        command.SetHandler((path, outputPath, sourceConfigPath, includeLineageTags) =>
+        command.SetHandler((path, outputPath, includeLineageTags) =>
         {
             try
             {
-                if (IsCsvPath(path))
-                {
-                    if (string.IsNullOrEmpty(sourceConfigPath))
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("\n✗ Error: --source-config is required for CSV imports");
-                        Console.ResetColor();
-                        Console.WriteLine("\nUsage: pbt import table <csv-path> --source-config <config-path> [output-path]");
-                        Environment.Exit(1);
-                    }
-
-                    if (includeLineageTags)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine("Warning: --include-lineage-tags is ignored for CSV imports");
-                        Console.ResetColor();
-                    }
-
-                    ExecuteTableImportCsv(path, outputPath, sourceConfigPath);
-                }
-                else if (IsTmdlPath(path))
-                {
-                    if (!string.IsNullOrEmpty(sourceConfigPath))
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine("Warning: --source-config is ignored for TMDL imports");
-                        Console.ResetColor();
-                    }
-
-                    ExecuteTableImportTmdl(path, outputPath, includeLineageTags);
-                }
-                else
-                {
+                if (!IsTmdlPath(path))
                     throw new InvalidOperationException(
-                        $"Unable to determine file type for: {path}\n" +
-                        "Expected either:\n" +
-                        "  - CSV file (.csv extension)\n" +
-                        "  - TMDL directory or file");
-                }
+                        $"Not a TMDL directory or .tmdl file: {path}\n" +
+                        "To start from a CSV schema or Snowflake, use `pbt generate-tables`.");
+
+                ExecuteTableImportTmdl(path, outputPath, includeLineageTags);
             }
             catch (Exception ex)
             {
                 PrintError("Import failed", ex);
                 Environment.Exit(1);
             }
-        }, pathArgument, outputPathArgument, sourceConfigOption, includeLineageTagsOption);
+        }, pathArgument, outputPathArgument, includeLineageTagsOption);
 
         return command;
-    }
-
-    private static void ExecuteTableImportCsv(string csvPath, string outputPath, string sourceConfigPath)
-    {
-        Console.WriteLine($"Importing tables from CSV: {csvPath}");
-        Console.WriteLine($"Source config: {sourceConfigPath}");
-        Console.WriteLine();
-
-        var serializer = new YamlSerializer();
-
-        if (!File.Exists(sourceConfigPath))
-            throw new FileNotFoundException($"Source config file not found: {sourceConfigPath}");
-
-        var sourceTypeConfig = serializer.LoadFromFile<SourceTypeConfig>(sourceConfigPath);
-        ValidateSourceTypeConfig(sourceTypeConfig, sourceConfigPath);
-
-        var config = ScaffoldConfig.CreateDefault();
-        if (sourceTypeConfig.Connector == null)
-            throw new InvalidOperationException($"Source config '{sourceConfigPath}' must include a 'connector' section");
-
-        config.Source = new SourceConfig
-        {
-            Type = sourceTypeConfig.SourceType,
-            Connection = sourceTypeConfig.Connector.Connection
-        };
-
-        Directory.CreateDirectory(outputPath);
-
-        // Read CSV and generate tables
-        var reader = new CsvSchemaReader();
-        var rows = reader.ReadSchema(csvPath);
-        var tableGroups = reader.GroupByTable(rows);
-
-        Console.WriteLine($"Found {tableGroups.Count} table(s) with {rows.Count} column(s)");
-        Console.WriteLine();
-
-        var generator = new TableGenerator(config, sourceTypeConfig);
-        var merger = new TableMerger(new MergeOptions { UpdateTypes = true });
-
-        Console.WriteLine("Importing tables:");
-        foreach (var (tableName, tableRows) in tableGroups)
-        {
-            var generated = generator.GenerateTable(tableName, tableRows);
-            var fileName = FileNameSanitizer.SanitizeToLower(generated.Name) + ".yaml";
-            var filePath = Path.Combine(outputPath, fileName);
-
-            var merged = merger.MergeTable(generated, filePath);
-            serializer.SaveToFile(merged, filePath);
-            Console.WriteLine($"  ✓ {fileName} ({merged.Columns.Count} columns)");
-        }
-
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"✓ Imported {tableGroups.Count} table(s)");
-        Console.ResetColor();
     }
 
     private static void ExecuteTableImportTmdl(string tmdlPath, string outputPath, bool includeLineageTags)
@@ -297,141 +207,7 @@ public static class ImportCommand
 
     #endregion
 
-    #region Source Subcommand
-
-    private static Command CreateSourceSubcommand()
-    {
-        var sourceConfigArgument = new Argument<string>("source-config", "Path to source configuration file (e.g., snowflake_config.yaml)");
-        var outputPathOption = new Option<string>("--output", () => "./tables", "Path where table YAML files will be created");
-        var testConnectionOption = new Option<bool>("--test", "Test the connection without importing");
-        var dryRunOption = new Option<bool>("--dry-run", "Show what would be imported without writing files");
-
-        var command = new Command("source", "Import tables directly from a data source (Snowflake, SQL Server)")
-        {
-            sourceConfigArgument, outputPathOption, testConnectionOption, dryRunOption
-        };
-
-        command.SetHandler((sourceConfigPath, outputPath, testConnection, dryRun) =>
-        {
-            try
-            {
-                ExecuteSourceImport(sourceConfigPath, outputPath, testConnection, dryRun);
-            }
-            catch (Exception ex)
-            {
-                PrintError("Source import failed", ex);
-                Environment.Exit(1);
-            }
-        }, sourceConfigArgument, outputPathOption, testConnectionOption, dryRunOption);
-
-        return command;
-    }
-
-    private static void ExecuteSourceImport(string sourceConfigPath, string outputPath, bool testConnection, bool dryRun)
-    {
-        if (!File.Exists(sourceConfigPath))
-            throw new FileNotFoundException($"Source config file not found: {sourceConfigPath}");
-
-        var serializer = new YamlSerializer();
-        var sourceConfig = serializer.LoadFromFile<SourceTypeConfig>(sourceConfigPath);
-
-        if (sourceConfig.Import == null)
-            throw new InvalidOperationException(
-                $"Source config '{sourceConfigPath}' is missing 'import' section.\n" +
-                "Add database, schema, and tables to enable live import.");
-
-        Console.WriteLine($"Source: {sourceConfig.SourceType}");
-        Console.WriteLine($"Database: {sourceConfig.Import.Database}");
-        Console.WriteLine($"Schema: {sourceConfig.Import.Schema}");
-        if (sourceConfig.Import.ImportAllTables)
-            Console.WriteLine("Tables: all");
-        else
-            Console.WriteLine($"Tables: {string.Join(", ", sourceConfig.Import.Tables)}");
-        Console.WriteLine();
-
-        // Create the appropriate schema reader based on source type
-        ISchemaReader reader = sourceConfig.SourceType.ToLowerInvariant() switch
-        {
-            "snowflake" => new SnowflakeSchemaReader(sourceConfig),
-            _ => throw new InvalidOperationException(
-                $"Live import not supported for source type '{sourceConfig.SourceType}'. " +
-                "Supported: snowflake. For other sources, use 'pbt import table <csv-path>'.")
-        };
-
-        // Test connection mode
-        if (testConnection)
-        {
-            Console.WriteLine("Testing connection...");
-            if (reader is SnowflakeSchemaReader sfReader)
-            {
-                var info = sfReader.TestConnection();
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine($"✓ {info}");
-                Console.ResetColor();
-            }
-            return;
-        }
-
-        // Read schema from live source
-        Console.WriteLine("Querying INFORMATION_SCHEMA...");
-        var rows = reader.ReadSchema();
-        var csvReader = new CsvSchemaReader();
-        var tableGroups = csvReader.GroupByTable(rows);
-
-        Console.WriteLine($"Found {tableGroups.Count} table(s) with {rows.Count} column(s)");
-        Console.WriteLine();
-
-        if (dryRun)
-        {
-            Console.WriteLine("Tables that would be imported:");
-            foreach (var (tableName, tableRows) in tableGroups)
-                Console.WriteLine($"  • {tableName} ({tableRows.Count} columns)");
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("\nDry run — no files written.");
-            Console.ResetColor();
-            return;
-        }
-
-        // Generate tables using existing pipeline
-        Directory.CreateDirectory(outputPath);
-
-        var config = ScaffoldConfig.CreateDefault();
-        if (sourceConfig.Connector != null)
-        {
-            config.Source = new SourceConfig
-            {
-                Type = sourceConfig.SourceType,
-                Connection = sourceConfig.Connector.Connection
-            };
-        }
-
-        var generator = new TableGenerator(config, sourceConfig);
-        var merger = new TableMerger(new MergeOptions { UpdateTypes = true });
-
-        Console.WriteLine("Importing tables:");
-        foreach (var (tableName, tableRows) in tableGroups)
-        {
-            var generated = generator.GenerateTable(tableName, tableRows);
-            var fileName = FileNameSanitizer.SanitizeToLower(generated.Name) + ".yaml";
-            var filePath = Path.Combine(outputPath, fileName);
-
-            var merged = merger.MergeTable(generated, filePath);
-            serializer.SaveToFile(merged, filePath);
-            Console.WriteLine($"  ✓ {fileName} ({merged.Columns.Count} columns)");
-        }
-
-        Console.WriteLine();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"✓ Imported {tableGroups.Count} table(s) from {sourceConfig.SourceType}");
-        Console.ResetColor();
-    }
-
-    #endregion
-
     #region Helpers
-
-    private static bool IsCsvPath(string path) =>
-        Path.GetExtension(path).Equals(".csv", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsTmdlPath(string path)
     {
@@ -458,57 +234,11 @@ public static class ImportCommand
         }
     }
 
-    private static void ValidateSourceTypeConfig(SourceTypeConfig config, string configPath)
-    {
-        var errors = new List<string>();
-
-        if (string.IsNullOrWhiteSpace(config.SourceType))
-            errors.Add("'source_type' field is required (e.g., 'snowflake', 'sqlserver')");
-        else
-        {
-            var supportedTypes = new[] { "snowflake", "sqlserver" };
-            if (!supportedTypes.Contains(config.SourceType.ToLowerInvariant()))
-                errors.Add($"'source_type' must be one of: {string.Join(", ", supportedTypes)}. Got: '{config.SourceType}'");
-        }
-
-        if (config.Connector == null)
-            errors.Add("'connector' section is required");
-        else
-        {
-            if (string.IsNullOrWhiteSpace(config.Connector.Name))
-                errors.Add("'connector.name' field is required");
-            if (string.IsNullOrWhiteSpace(config.Connector.Connection))
-                errors.Add("'connector.connection' field is required");
-            if (config.SourceType?.Equals("snowflake", StringComparison.OrdinalIgnoreCase) == true
-                && string.IsNullOrWhiteSpace(config.Connector.Warehouse))
-                errors.Add("'connector.warehouse' field is required for Snowflake sources");
-        }
-
-        if (errors.Count > 0)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"\nSource config validation failed: {configPath}");
-            foreach (var error in errors)
-                Console.WriteLine($"  - {error}");
-            Console.ResetColor();
-            throw new InvalidOperationException("Source configuration is incomplete.");
-        }
-    }
-
     private static void ReportUnsupportedObjects(Database database, string mode)
     {
         var unsupported = new List<string>();
-        if (database.Model.Perspectives.Count > 0)
-            unsupported.Add($"Perspectives: {database.Model.Perspectives.Count}");
-        if (database.Model.Roles.Count > 0)
-            unsupported.Add($"Roles: {database.Model.Roles.Count}");
-        foreach (var table in database.Model.Tables)
-        {
-            if (table.CalculationGroup != null)
-                unsupported.Add($"Calculation Group: {table.Name}");
-        }
-        if (database.Model.Cultures.Count > 0)
-            unsupported.Add($"Translations/Cultures: {database.Model.Cultures.Count}");
+        foreach (var table in database.Model.Tables.Where(t => t.Calendars.Count > 0))
+            unsupported.Add($"Calendars on table {table.Name}: {table.Calendars.Count}");
 
         if (unsupported.Count == 0) return;
 

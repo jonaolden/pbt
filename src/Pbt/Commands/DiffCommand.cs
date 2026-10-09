@@ -66,11 +66,15 @@ public static class DiffCommand
         var modelsA = LoadModels(pathA, serializer);
         var modelsB = LoadModels(pathB, serializer);
 
-        // Compare tables
-        CompareTableSets(tablesA, tablesB, changes);
+        // Compare models: composed TOM databases first (covers every TOM property)
+        var tomCompared = CompareComposedModels(pathA, pathB, modelsA, modelsB, serializer, changes);
 
-        // Compare models
-        CompareModelSets(modelsA, modelsB, changes);
+        // Fall back to YAML-level comparison for anything TOM could not compare
+        if (!tomCompared)
+        {
+            CompareTableSets(tablesA, tablesB, changes);
+            CompareModelSets(modelsA, modelsB, changes);
+        }
 
         // Output results
         var hasBreaking = changes.Any(c => c.IsBreaking);
@@ -87,6 +91,48 @@ public static class DiffCommand
         if (breakingOnly && hasBreaking)
         {
             Environment.Exit(1);
+        }
+    }
+
+    /// <summary>
+    /// Build every model that exists in both projects and diff the TOM databases.
+    /// Returns false if no model could be compared (e.g. a build failed), so the caller can fall back to YAML.
+    /// </summary>
+    private static bool CompareComposedModels(
+        string pathA, string pathB,
+        Dictionary<string, ModelDefinition> modelsA,
+        Dictionary<string, ModelDefinition> modelsB,
+        YamlSerializer serializer,
+        List<DiffChange> changes)
+    {
+        var buildA = TryBuildAll(pathA, serializer);
+        var buildB = TryBuildAll(pathB, serializer);
+        if (buildA == null || buildB == null) return false;
+
+        foreach (var name in buildA.Keys.Except(buildB.Keys))
+            changes.Add(new DiffChange("model_removed", name, null, null, IsBreaking: true));
+        foreach (var name in buildB.Keys.Except(buildA.Keys))
+            changes.Add(new DiffChange("model_added", name, null, null, IsBreaking: false));
+
+        foreach (var name in buildA.Keys.Intersect(buildB.Keys))
+            foreach (var c in TomDiff.Diff(buildA[name], buildB[name]))
+                changes.Add(new DiffChange(c.ChangeType, c.ObjectPath, c.OldValue, c.NewValue, c.IsBreaking));
+
+        return true;
+    }
+
+    private static Dictionary<string, Microsoft.AnalysisServices.Tabular.Database>? TryBuildAll(string path, YamlSerializer serializer)
+    {
+        try
+        {
+            return new BuildService(serializer)
+                .Build(path, modelFilter: null, lineageService: null)
+                .ToDictionary(r => r.ModelName, r => r.Database, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Warning: could not build '{path}' for TOM diff, using YAML diff: {ex.Message}");
+            return null;
         }
     }
 

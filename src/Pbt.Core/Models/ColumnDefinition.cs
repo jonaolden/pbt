@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Represents a column in a table
 /// </summary>
-public class ColumnDefinition
+public class ColumnDefinition : MetadataDefinition
 {
     /// <summary>
     /// Column name
@@ -83,8 +83,38 @@ public class ColumnDefinition
     /// </summary>
     public bool? IsKey { get; set; }
 
+    public bool? IsNullable { get; set; }
+
+    public bool? IsUnique { get; set; }
+
     /// <summary>
-    /// Key-value annotations for tooling metadata and extended properties
+    /// Encoding hint: Default, Hash, Value
     /// </summary>
-    public Dictionary<string, string>? Annotations { get; set; }
+    public string? EncodingHint { get; set; }
+
+    /// <summary>
+    /// Marks the column as an aggregation of a detail-table column
+    /// </summary>
+    public AlternateOfDefinition? AlternateOf { get; set; }
+}
+
+/// <summary>
+/// Aggregation mapping: this column summarizes a column (or table, for Count) in a detail table
+/// </summary>
+public class AlternateOfDefinition
+{
+    /// <summary>
+    /// Sum, Min, Max, Count, GroupBy
+    /// </summary>
+    public string Summarization { get; set; } = "Sum";
+
+    /// <summary>
+    /// Detail column as "Table.Column" (Sum, Min, Max, GroupBy)
+    /// </summary>
+    public string? BaseColumn { get; set; }
+
+    /// <summary>
+    /// Detail table (Count)
+    /// </summary>
+    public string? BaseTable { get; set; }
 }

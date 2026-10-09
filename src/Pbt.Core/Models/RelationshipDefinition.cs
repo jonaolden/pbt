@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Represents a relationship between two tables
 /// </summary>
-public class RelationshipDefinition
+public class RelationshipDefinition : MetadataDefinition
 {
     /// <summary>
     /// Source table name (many side)
@@ -47,4 +47,14 @@ public class RelationshipDefinition
     /// Critical for DirectQuery models with large fact tables.
     /// </summary>
     public bool RelyOnReferentialIntegrity { get; set; }
+
+    /// <summary>
+    /// RLS propagation across the relationship: OneDirection or BothDirections
+    /// </summary>
+    public string? SecurityFilteringBehavior { get; set; }
+
+    /// <summary>
+    /// For date/time joins: DateAndTime or DatePartOnly
+    /// </summary>
+    public string? JoinOnDateBehavior { get; set; }
 }

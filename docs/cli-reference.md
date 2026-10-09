@@ -240,7 +240,7 @@ pbt import model /path/to/model.tmdl my_yaml_project --unsupported-objects error
 
 ### pbt import table
 
-Import individual table definitions from TMDL or a CSV schema export.
+Import individual table definitions from TMDL.
 
 ```
 pbt import table <path> [<output-path>] [options]
@@ -250,15 +250,14 @@ pbt import table <path> [<output-path>] [options]
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `path` | _(required)_ | Path to a `.csv` file **or** a TMDL directory/file. The command detects the type by extension. |
+| `path` | _(required)_ | TMDL directory or `.tmdl` file. |
 | `output-path` | `./tables` | Directory where table YAML files are written. |
 
 **Options**
 
 | Option | Description |
 |--------|-------------|
-| `--source-config <path>` | Path to a source configuration YAML file. **Required for CSV imports.** Ignored for TMDL imports. |
-| `--include-lineage-tags` | Preserve original lineage tags. Applies to TMDL imports only; ignored for CSV. |
+| `--include-lineage-tags` | Preserve original lineage tags. |
 
 **Smart merge behaviour**
 
@@ -269,62 +268,13 @@ When a table YAML file already exists at the output path, the import merges rath
 - Removed columns are kept by default (safer than silent deletion)
 - Manual settings are preserved: `description`, `is_hidden`, `format_string`, `hierarchies`, `annotations`
 
-**CSV import**
-
-The CSV must be an `INFORMATION_SCHEMA.COLUMNS`-style export with at least `TABLE_NAME`, `COLUMN_NAME`, and `DATA_TYPE` columns (exact column names depend on the source config). A source configuration file is required:
-
-```bash
-pbt import table schema_export.csv --source-config snowflake_config.yaml
-pbt import table schema_export.csv --source-config snowflake_config.yaml ./my_tables
-```
-
-**TMDL import**
-
 ```bash
 pbt import table /path/to/model.tmdl
 pbt import table /path/to/model.tmdl ./my_tables
 pbt import table /path/to/model.tmdl --include-lineage-tags
 ```
 
-### pbt import source
-
-Import tables directly from a live data source (currently Snowflake) by querying `INFORMATION_SCHEMA` at build time.
-
-```
-pbt import source <source-config> [options]
-```
-
-**Arguments**
-
-| Argument | Description |
-|----------|-------------|
-| `source-config` | Path to a source configuration YAML file (e.g., `snowflake.yaml`). |
-
-**Options**
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--output <path>` | `./tables` | Directory where table YAML files are written. |
-| `--test` | false | Test the connection and exit without importing. |
-| `--dry-run` | false | Print the tables that would be imported without writing files. |
-
-The source config file specifies the connector, credentials (via environment variable references), which database/schema/tables to import, datatype mappings, and column naming rules. See `examples/snowflake.yaml` for a fully annotated example.
-
-```bash
-# Test connectivity
-pbt import source snowflake.yaml --test
-
-# Preview what would be imported
-pbt import source snowflake.yaml --dry-run
-
-# Import to default ./tables
-pbt import source snowflake.yaml
-
-# Import to a custom directory
-pbt import source snowflake.yaml --output ./warehouse_tables
-```
-
-**Supported sources**: Snowflake. For SQL Server and other sources, export an `INFORMATION_SCHEMA.COLUMNS` CSV and use `pbt import table` with a source config.
+**From Snowflake or a CSV schema export**: use `pbt generate-tables` (see below); it writes `tables/*.yaml` directly.
 
 ---
 
@@ -446,6 +396,75 @@ git worktree add /tmp/base-branch origin/main
 pbt diff /tmp/base-branch . --breaking
 git worktree remove /tmp/base-branch
 ```
+
+---
+
+## generate-tables
+
+Expand table declarations in `pbt.yml` into `tables/<name>.yaml` by fetching columns from the source. `pbt build` then produces the TMDL.
+
+```
+pbt generate-tables [options]
+```
+
+**Options**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--config <path>` | `pbt.yml` | Path to the config file. Tables are written to `tables/` next to it. |
+| `--dry-run` | false | Report created / updated / unchanged / error per table without writing files (including model refs). |
+
+Exit code `1` if any table fails; other tables are still processed. Supports global `--output-format json`.
+
+**`pbt.yml`**
+
+```yaml
+sources:
+  snowflake:
+    connector: SnowflakeSource     # shared connector expression, or `connection:` literal (no secrets, no ${VAR})
+model: models/sales_model.yaml     # optional: missing `ref:` entries are added here (YAML comments in it are lost)
+tables:
+  - table_name: Property
+    source: snowflake
+    target: db.schema.table        # unquoted parts fold to UPPER; "Quoted" keeps case
+  - table_name: Room
+    source: csv
+    target: exports/schema.csv#ROOMS   # path (relative to cwd) # TABLE_NAME
+```
+
+For `csv`, add `sources.csv` with `connector:` (and `type: snowflake|sqlserver`, default `snowflake`, for M generation). CSV headers (case-insensitive): required `table_name`, `column_name`, `data_type`; optional `ordinal_position`, `table_comment`, `column_comment`, `table_catalog`, `table_schema`.
+
+**Behaviour**
+
+- Snowflake metadata is read in-process with the .NET `Snowflake.Data` connector (no Python). Credentials come from env vars (`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_ROLE`, plus auth below), never from or into project files.
+- Snowflake auth is `SNOWFLAKE_AUTHENTICATOR`, inferred when unset (`SNOWFLAKE_PASSWORD` -> `snowflake`, `SNOWFLAKE_PRIVATE_KEY_FILE` -> `snowflake_jwt`, `SNOWFLAKE_TOKEN` -> `oauth`, else `externalbrowser` SSO). Supported: `externalbrowser`, `snowflake` (`SNOWFLAKE_PASSWORD`), `username_password_mfa` (`SNOWFLAKE_PASSWORD`, optional `SNOWFLAKE_PASSCODE`), `snowflake_jwt` (`SNOWFLAKE_PRIVATE_KEY_FILE`, optional `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`), `oauth` / `programmatic_access_token` (`SNOWFLAKE_TOKEN`), `workload_identity`.
+- `pbt.yml` only selects which tables to retrieve (`table_name`, `source`, `target`). There are no modeling options: column names, types, keys, hidden flags, formats, measures and so on are edited in the generated `tables/<name>.yaml`. Unknown keys in `pbt.yml` are rejected.
+- Re-runs merge into the existing table file: manual edits (measures, hierarchies, descriptions, column properties) are kept; new source columns are added; unchanged files are not rewritten. An unreadable existing file is an error, never overwritten.
+
+**Example**
+
+```bash
+pbt generate-tables --dry-run
+pbt generate-tables --config ./pbt.yml
+```
+
+---
+
+## validate-tables
+
+Check `pbt.yml` table definitions offline (no source lookup): required fields, duplicate `table_name`, configured source, target component count.
+
+```
+pbt validate-tables [options]
+```
+
+**Options**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--config <path>` | `pbt.yml` | Path to the config file. |
+
+Exit code `1` if any definition is invalid. Supports global `--output-format json`.
 
 ---
 

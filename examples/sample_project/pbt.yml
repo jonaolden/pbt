@@ -1,0 +1,30 @@
+# pbt.yml - declare source tables; `pbt generate-tables` fetches their columns
+# from Snowflake and writes tables/<name>.yaml. Modeling (names, keys, hidden,
+# formats, measures, ...) is done in those YAML files; reruns keep manual edits.
+#
+#   cp .env.example .env   # then fill in real credentials
+#   pbt generate-tables --dry-run
+#   pbt generate-tables
+#
+# Dummy values: ANALYTICS_DB.PUBLIC.* does not exist.
+
+sources:
+  snowflake:
+    connector: SnowflakeSource   # defined in snowflake_config.yaml
+
+# Optionally, generated tables get a `ref:` appended to this model
+model: models/sales_model.yaml
+
+tables:
+  - table_name: Reservations
+    source: snowflake
+    target: ANALYTICS_DB.PUBLIC.RESERVATIONS
+
+  - table_name: RoomTypes
+    source: snowflake
+    target: ANALYTICS_DB.PUBLIC.ROOM_TYPES
+
+  # Quoted parts keep their case; unquoted parts fold to upper case
+  - table_name: DailyRevenue
+    source: snowflake
+    target: ANALYTICS_DB.PUBLIC."Daily Revenue"

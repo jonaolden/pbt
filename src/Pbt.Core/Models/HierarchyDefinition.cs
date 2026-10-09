@@ -3,7 +3,7 @@ namespace Pbt.Core.Models;
 /// <summary>
 /// Represents a hierarchy in a table
 /// </summary>
-public class HierarchyDefinition
+public class HierarchyDefinition : MetadataDefinition
 {
     /// <summary>
     /// Hierarchy name
